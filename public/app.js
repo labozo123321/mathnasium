@@ -84,15 +84,23 @@
   }
 
   // ---------- data ----------
+  async function apiFetch(path) {
+    const res = await fetch(path);
+    if (res.status === 401) throw { auth: true };
+    if (!res.ok) {
+      let msg = 'Request failed (' + res.status + ')';
+      try { msg = (await res.json()).error || msg; } catch (e) { /* non-JSON error */ }
+      throw { msg, status: res.status };
+    }
+    return res.json();
+  }
   async function loadOverview() {
-    const res = await fetch('/api/overview');
-    state.overview = await res.json();
+    state.overview = await apiFetch('/api/overview');
   }
   async function loadTrends() {
     const q = new URLSearchParams({ days: state.days });
     if (state.center) q.set('center', state.center);
-    const res = await fetch('/api/trends?' + q);
-    state.trends = (await res.json()).days;
+    state.trends = (await apiFetch('/api/trends?' + q)).days;
   }
   async function loadRosters() {
     if (!state.overview) return;
@@ -100,8 +108,7 @@
       ? state.overview.centers.filter((c) => String(c.id) === state.center)
       : state.overview.centers;
     await Promise.all(wanted.map(async (c) => {
-      const res = await fetch('/api/roster/' + c.id);
-      state.rosters.set(c.id, (await res.json()).students || []);
+      state.rosters.set(c.id, (await apiFetch('/api/roster/' + c.id)).students || []);
     }));
   }
 
@@ -423,6 +430,29 @@
     if (saved) document.documentElement.dataset.theme = saved;
   } catch (e) { /* private mode */ }
 
+  // ---------- lock overlay ----------
+  function showLock(message) {
+    $('#lock').hidden = false;
+    if (message) $('#lockMsg').textContent = message;
+    $('#lockPass').focus();
+  }
+  $('#lockForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: $('#lockPass').value }),
+    });
+    if (res.ok) {
+      $('#lock').hidden = true;
+      $('#lockPass').value = '';
+      $('#lockMsg').textContent = 'Enter the dashboard password to continue.';
+      refresh(true);
+    } else {
+      $('#lockMsg').textContent = 'Wrong password - try again.';
+    }
+  });
+
   // ---------- refresh loop ----------
   let refreshing = false;
   async function refresh(full) {
@@ -434,7 +464,9 @@
       await Promise.all([loadTrends(), full || state.rosters.size === 0 ? loadRosters() : Promise.resolve()]);
       renderAll();
     } catch (e) {
-      $('#lastSync').textContent = 'Connection lost - retrying…';
+      if (e && e.auth) showLock();
+      else if (e && e.status === 503) showLock(e.msg);
+      else $('#lastSync').textContent = (e && e.msg) ? e.msg : 'Connection lost - retrying…';
     } finally {
       $('#main').classList.remove('refreshing');
       refreshing = false;

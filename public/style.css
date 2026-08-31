@@ -180,6 +180,25 @@ figure.card figcaption { display: flex; justify-content: space-between; align-it
 
 .empty { padding: 18px 0; }
 
+/* ---- lock overlay ---- */
+.lock {
+  position: fixed; inset: 0; z-index: 30;
+  background: var(--page);
+  display: flex; align-items: center; justify-content: center;
+}
+.lock[hidden] { display: none; }
+.lock-card {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+  padding: 26px 28px; width: min(340px, 90vw);
+  display: grid; gap: 10px;
+}
+.lock-card h2 { margin: 0; font-size: 16px; color: var(--text-primary); }
+.lock-card input {
+  background: var(--page); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; font: inherit;
+}
+.lock-card .err-msg { color: var(--series-2); font-size: 12px; }
+
 /* ---- tooltip ---- */
 .tooltip {
   position: fixed; z-index: 20; pointer-events: none;

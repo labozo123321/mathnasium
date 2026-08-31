@@ -41,6 +41,36 @@ concurrency, arrivals per hour) to `data/history.json` - the trend charts
 get richer the longer the app runs. Keep it running on a machine that's on
 during center hours (a spare laptop, a mini PC, etc.) for best history.
 
+## Put it online with Vercel (free)
+
+Running on [Vercel](https://vercel.com) means the dashboard lives at a URL
+you can open from any phone or laptop, with nothing to keep running at home.
+
+1. Sign in to Vercel with your GitHub account → **Add New… → Project** →
+   import this repository (pick the branch this code is on if asked).
+   Framework preset: **Other**. Don't deploy yet - add the env vars first.
+2. Under **Environment Variables**, add:
+   - `RADIUS_USERNAME` - your Radius username
+   - `RADIUS_PASSWORD` - your Radius password
+   - `DASHBOARD_PASSWORD` - a password of your choosing; anyone opening the
+     URL must enter it. **Required** - the page is on a public URL and shows
+     student names, so the app refuses to serve data without it.
+3. Deploy. Open the URL, enter your dashboard password, done.
+4. *(Recommended)* For trend history that survives redeploys: in your Vercel
+   project go to **Storage → Create Database → Upstash Redis** (free tier).
+   It auto-adds the env vars the app looks for; redeploy afterwards.
+
+How the Vercel version differs from running locally:
+
+- There is no background poller. Data is fetched from Radius when someone
+  views the dashboard (shared/cached for ~25 s across viewers).
+- Daily history (visits, peak, busiest hours) is reconstructed from Radius's
+  own arrival/departure times, so a single evening view captures the whole
+  day - and a built-in daily cron (04:30 UTC, after all centers close)
+  records each day even if nobody looked.
+- Without Upstash Redis, history is kept in memory only and fades on
+  redeploys/cold starts; "today" always works regardless.
+
 ## Good to know
 
 - **Your password lives only in `.env`**, which is gitignored. The dashboard

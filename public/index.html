@@ -97,6 +97,15 @@
   </section>
 </main>
 
+<div id="lock" class="lock" hidden>
+  <form id="lockForm" class="lock-card">
+    <h2>This dashboard is private</h2>
+    <p class="muted" id="lockMsg">Enter the dashboard password to continue.</p>
+    <input type="password" id="lockPass" placeholder="Password" autocomplete="current-password" aria-label="Dashboard password">
+    <button type="submit" class="ghost-btn">Unlock</button>
+  </form>
+</div>
+
 <div id="tooltip" class="tooltip" hidden></div>
 
 <footer class="foot muted">
