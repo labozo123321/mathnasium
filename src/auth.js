@@ -53,4 +53,4 @@ async function readJsonBody(req) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch (e) { return {}; }
 }
 
-module.exports = { COOKIE_NAME, cookieValue, isAuthenticated, checkPassword, authCookieHeader, readJsonBody };
+module.exports = { COOKIE_NAME, cookieValue, isAuthenticated, checkPassword, authCookieHeader, readJsonBody, parseCookies };

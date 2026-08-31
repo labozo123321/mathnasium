@@ -133,7 +133,23 @@
 
     const note = $('#configNote');
     note.hidden = !o.note;
-    if (o.note) note.textContent = o.note;
+    if (o.note) {
+      note.replaceChildren(document.createTextNode(o.note + ' '));
+      if (o.canSetup) {
+        note.appendChild(h('button', {
+          class: 'ghost-btn', type: 'button', text: 'Connect Radius',
+          onclick: () => { $('#setup').hidden = false; $('#setupUser').focus(); },
+        }));
+      }
+    }
+
+    // first time we see demo data, offer the connect form right away
+    if (o.canSetup && !state.setupOffered) {
+      state.setupOffered = true;
+      let dismissed = false;
+      try { dismissed = sessionStorage.getItem('mn-setup-skip') === '1'; } catch (e) { /* private mode */ }
+      if (!dismissed) { $('#setup').hidden = false; $('#setupUser').focus(); }
+    }
 
     const sel = $('#centerFilter');
     if (sel.options.length <= 1 && o.centers.length) {
@@ -455,6 +471,40 @@
     } else {
       $('#lockMsg').textContent = 'Wrong password - try again.';
     }
+  });
+
+  // ---------- Radius connect overlay ----------
+  $('#setupForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('#setupErr');
+    err.hidden = true;
+    const btn = $('#setupGo');
+    btn.disabled = true;
+    btn.textContent = 'Checking with Radius…';
+    try {
+      const res = await fetch('/api/radius-setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: $('#setupUser').value, password: $('#setupPass').value }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        $('#setup').hidden = true;
+        $('#setupPass').value = '';
+        state.rosters.clear();
+        refresh(true);
+      } else {
+        err.textContent = body.error || 'That login did not work - try again.';
+        err.hidden = false;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Connect';
+    }
+  });
+  $('#setupSkip').addEventListener('click', () => {
+    $('#setup').hidden = true;
+    try { sessionStorage.setItem('mn-setup-skip', '1'); } catch (e) { /* private mode */ }
   });
 
   // ---------- refresh loop ----------

@@ -48,20 +48,24 @@ you can open from any phone or laptop, with nothing to keep running at home.
 
 1. Sign in to Vercel with your GitHub account → **Add New… → Project** →
    import this repository (pick the branch this code is on if asked).
-   Framework preset: **Other**. Don't deploy yet - add the env vars first.
-2. Under **Environment Variables**, add:
-   - `RADIUS_USERNAME` - your Radius username
-   - `RADIUS_PASSWORD` - your Radius password
-   - `DASHBOARD_PASSWORD` *(optional)* - the password viewers must enter.
-     If you don't set it, the dashboard password is **1234**. (The page is on
-     a public URL and shows student names, so there is always a password on
-     Vercel - set your own to make it harder to guess.)
-3. Deploy. Open the URL, enter your dashboard password, done.
-   Note: changing environment variables later only takes effect after a
-   redeploy (Deployments → ⋯ on the latest → Redeploy).
-4. *(Recommended)* For trend history that survives redeploys: in your Vercel
-   project go to **Storage → Create Database → Upstash Redis** (free tier).
-   It auto-adds the env vars the app looks for; redeploy afterwards.
+   Framework preset: **Other**. Deploy - no settings needed.
+2. Open the URL. The dashboard password is **1234** (see below to change it).
+3. The page then asks for your **Radius username and password** - the same
+   login you use at radius.mathnasium.com. It's checked against Radius,
+   remembered in that browser only, and your real centers appear. (On a new
+   phone/browser you enter it once again.)
+
+Optional extras, via **Settings → Environment Variables** in Vercel (each
+takes effect after a redeploy: Deployments → ⋯ on the latest → Redeploy):
+
+- `DASHBOARD_PASSWORD` - change the viewer password from the default
+  **1234**. The page is on a public URL and shows student names, so pick
+  something harder to guess.
+- `RADIUS_USERNAME` / `RADIUS_PASSWORD` - store the Radius login on the
+  server instead of per-browser; nobody has to type it into the page, and
+  the daily history cron can record days even when nobody views.
+- **Storage → Create Database → Upstash Redis** (free) - keeps trend
+  history across redeploys and restarts.
 
 How the Vercel version differs from running locally:
 

@@ -108,6 +108,18 @@
   </form>
 </div>
 
+<div id="setup" class="lock" hidden>
+  <form id="setupForm" class="lock-card">
+    <h2>Connect your Radius account</h2>
+    <p class="muted">You're seeing demo data. Enter the same username and password you use at radius.mathnasium.com and your real centers will appear. It's saved only in this browser.</p>
+    <input id="setupUser" placeholder="Radius username" autocomplete="username" aria-label="Radius username">
+    <input type="password" id="setupPass" placeholder="Radius password" autocomplete="current-password" aria-label="Radius password">
+    <p class="err-msg" id="setupErr" hidden></p>
+    <button type="submit" class="ghost-btn" id="setupGo">Connect</button>
+    <button type="button" class="ghost-btn" id="setupSkip">Not now — keep demo data</button>
+  </form>
+</div>
+
 <div id="tooltip" class="tooltip" hidden></div>
 
 <footer class="foot muted">
