@@ -52,10 +52,13 @@ you can open from any phone or laptop, with nothing to keep running at home.
 2. Under **Environment Variables**, add:
    - `RADIUS_USERNAME` - your Radius username
    - `RADIUS_PASSWORD` - your Radius password
-   - `DASHBOARD_PASSWORD` - a password of your choosing; anyone opening the
-     URL must enter it. **Required** - the page is on a public URL and shows
-     student names, so the app refuses to serve data without it.
+   - `DASHBOARD_PASSWORD` *(optional)* - the password viewers must enter.
+     If you don't set it, the dashboard password is **1234**. (The page is on
+     a public URL and shows student names, so there is always a password on
+     Vercel - set your own to make it harder to guess.)
 3. Deploy. Open the URL, enter your dashboard password, done.
+   Note: changing environment variables later only takes effect after a
+   redeploy (Deployments → ⋯ on the latest → Redeploy).
 4. *(Recommended)* For trend history that survives redeploys: in your Vercel
    project go to **Storage → Create Database → Upstash Redis** (free tier).
    It auto-adds the env vars the app looks for; redeploy afterwards.

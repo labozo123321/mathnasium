@@ -106,6 +106,12 @@ h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; color: var(--text-seco
 }
 .ghost-btn:hover { background: var(--wash); }
 
+.config-note {
+  margin: 14px 20px 0; padding: 10px 14px;
+  background: var(--wash); border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13px; color: var(--text-secondary);
+}
+
 .filters {
   display: flex; gap: 16px; align-items: end; flex-wrap: wrap;
   padding: 14px 20px 0;

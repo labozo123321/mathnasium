@@ -131,6 +131,10 @@
       ? 'Updated ' + new Date(o.lastSync).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
       : 'Waiting for first sync…';
 
+    const note = $('#configNote');
+    note.hidden = !o.note;
+    if (o.note) note.textContent = o.note;
+
     const sel = $('#centerFilter');
     if (sel.options.length <= 1 && o.centers.length) {
       for (const c of o.centers) sel.appendChild(h('option', { value: c.id, text: c.name }));

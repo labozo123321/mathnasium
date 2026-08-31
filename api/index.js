@@ -17,7 +17,9 @@ const {
 } = require('../src/auth');
 
 const MOCK = !process.env.RADIUS_USERNAME || !process.env.RADIUS_PASSWORD;
-const PASSWORD = process.env.DASHBOARD_PASSWORD || '';
+// On Vercel the page must never be open to the world, so with no
+// DASHBOARD_PASSWORD configured it falls back to the default below.
+const PASSWORD = process.env.DASHBOARD_PASSWORD || (process.env.VERCEL ? '1234' : '');
 
 // Module scope survives between requests while the instance is warm.
 const client = MOCK
@@ -47,12 +49,6 @@ module.exports = async (req, res) => {
     }
   }
 
-  if (!PASSWORD && process.env.VERCEL) {
-    return json(res, 503, {
-      error: 'Not configured: set a DASHBOARD_PASSWORD environment variable in Vercel (Settings → Environment Variables) so this page is not public, then redeploy.',
-    });
-  }
-
   if (path === '/api/login' && req.method === 'POST') {
     const body = await readJsonBody(req);
     if (checkPassword(body.password, PASSWORD)) {
@@ -69,7 +65,11 @@ module.exports = async (req, res) => {
   try {
     if (path === '/api/overview') {
       await service.refresh();
-      return json(res, 200, service.overview());
+      const body = service.overview();
+      if (MOCK && process.env.VERCEL) {
+        body.note = 'Showing demo data - add RADIUS_USERNAME and RADIUS_PASSWORD in Vercel (Settings → Environment Variables) and redeploy to see your real centers.';
+      }
+      return json(res, 200, body);
     }
     const rosterMatch = /^\/api\/roster\/(\d+)$/.exec(path);
     if (rosterMatch) {
