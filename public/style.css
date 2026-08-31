@@ -1,0 +1,197 @@
+/* Mathnasium Live - dashboard styles.
+   Color roles follow the validated reference palette: light values on :root,
+   dark values under the media query (guarded so an explicit light choice
+   wins) and under [data-theme="dark"] so the toggle wins both ways. */
+
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid-line: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --series-1: #2a78d6;      /* students / primary series */
+  --series-2: #eb6834;      /* staff accent */
+  --seq-150: #b7d3f6;       /* light sequential steps for meters/sparks */
+  --seq-250: #86b6ef;
+  --de-emphasis: #c3c2b7;
+  --status-good: #0ca30c;
+  --good-text: #006300;
+  --wash: rgba(42, 120, 214, 0.10);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid-line: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --seq-150: #184f95;
+    --seq-250: #1c5cab;
+    --de-emphasis: #52514e;
+    --status-good: #0ca30c;
+    --good-text: #0ca30c;
+    --wash: rgba(57, 135, 229, 0.12);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid-line: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --seq-150: #184f95;
+  --seq-250: #1c5cab;
+  --de-emphasis: #52514e;
+  --status-good: #0ca30c;
+  --good-text: #0ca30c;
+  --wash: rgba(57, 135, 229, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 { font-size: 17px; margin: 0; font-weight: 650; }
+h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; color: var(--text-secondary); text-transform: none; }
+
+.muted { color: var(--text-muted); font-size: 12px; }
+
+/* ---- chrome ---- */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+  position: sticky; top: 0; z-index: 5;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+  width: 28px; height: 28px; border-radius: 7px;
+  background: var(--series-1); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 15px;
+}
+.badge {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.4px;
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.badge.live { color: var(--good-text); border-color: var(--good-text); }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+
+.ghost-btn {
+  background: none; border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: 7px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 12px;
+}
+.ghost-btn:hover { background: var(--wash); }
+
+.filters {
+  display: flex; gap: 16px; align-items: end; flex-wrap: wrap;
+  padding: 14px 20px 0;
+}
+.filter { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+.filter select, #rosterSearch {
+  background: var(--surface-1); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px; font: inherit;
+}
+
+.content { padding: 16px 20px 40px; display: grid; gap: 18px; max-width: 1280px; margin: 0 auto; }
+.content.refreshing { opacity: 0.6; transition: opacity 0.2s; }
+
+/* ---- KPI tiles ---- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.tile {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px;
+}
+.tile .label { font-size: 12px; color: var(--text-secondary); }
+.tile .value { font-size: 34px; font-weight: 650; line-height: 1.15; margin-top: 2px; }
+.tile.hero .value { font-size: 48px; }
+.tile .sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* ---- center cards ---- */
+.center-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px; }
+.center-card {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 14px; display: grid; gap: 6px;
+  cursor: pointer;
+}
+.center-card:hover { border-color: var(--series-1); }
+.center-card.selected { outline: 2px solid var(--series-1); outline-offset: -1px; }
+.center-card .head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.center-card .name { font-weight: 600; font-size: 13px; }
+.center-card .live-num { font-size: 30px; font-weight: 650; }
+.center-card .live-num .unit { font-size: 12px; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
+.center-card .row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); }
+.center-card .spark { margin-top: 2px; width: 100%; height: auto; display: block; }
+.center-card .err { color: var(--text-muted); font-size: 11px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--de-emphasis); }
+.dot.on { background: var(--status-good); }
+
+/* ---- cards / charts ---- */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+
+figure.card {
+  margin: 0; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px;
+}
+figure.card figcaption { display: flex; justify-content: space-between; align-items: center; }
+.chart { width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart text { font: 11px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--text-muted); }
+.chart .val-label { fill: var(--text-secondary); font-weight: 600; }
+
+.roster-head { gap: 10px; }
+.scroll-x { overflow-x: auto; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.data-table th {
+  text-align: left; font-size: 11px; color: var(--text-muted); font-weight: 600;
+  padding: 6px 10px; border-bottom: 1px solid var(--grid-line); white-space: nowrap;
+}
+.data-table td { padding: 6px 10px; border-bottom: 1px solid var(--grid-line); }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table .num { font-variant-numeric: tabular-nums; }
+.table-view { margin-top: 8px; }
+.table-view table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.table-view th, .table-view td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid-line); }
+.table-view .num { font-variant-numeric: tabular-nums; }
+
+.empty { padding: 18px 0; }
+
+/* ---- tooltip ---- */
+.tooltip {
+  position: fixed; z-index: 20; pointer-events: none;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 10px; font-size: 12px; color: var(--text-secondary);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  max-width: 240px;
+}
+.tooltip .tip-value { color: var(--text-primary); font-weight: 650; font-size: 14px; }
+.tooltip .key {
+  display: inline-block; width: 10px; height: 3px; border-radius: 2px;
+  background: var(--series-1); vertical-align: middle; margin-right: 5px;
+}
+
+.foot { padding: 0 20px 30px; text-align: center; }

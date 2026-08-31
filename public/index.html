@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mathnasium Live</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Ctext x='16' y='23' font-size='19' font-weight='700' font-family='system-ui' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">M</span>
+    <h1>Mathnasium Live</h1>
+    <span id="modeBadge" class="badge" hidden></span>
+  </div>
+  <div class="topbar-right">
+    <span id="lastSync" class="muted"></span>
+    <button id="themeToggle" class="ghost-btn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+  </div>
+</header>
+
+<div class="filters" role="group" aria-label="Filters">
+  <label class="filter">
+    <span>Center</span>
+    <select id="centerFilter"><option value="">All centers</option></select>
+  </label>
+  <label class="filter">
+    <span>Trend range</span>
+    <select id="rangeFilter">
+      <option value="7">Last 7 days</option>
+      <option value="14">Last 14 days</option>
+      <option value="30" selected>Last 30 days</option>
+      <option value="90">Last 90 days</option>
+    </select>
+  </label>
+</div>
+
+<main id="main" class="content">
+  <section class="kpis" id="kpiRow" aria-label="Headline numbers"></section>
+
+  <section aria-labelledby="centersTitle">
+    <h2 id="centersTitle">Centers</h2>
+    <div class="center-grid" id="centerGrid"></div>
+  </section>
+
+  <section class="two-col">
+    <figure class="card" id="byCenterCard">
+      <figcaption>
+        <h2>Checked in right now, by center</h2>
+        <button class="ghost-btn table-toggle" data-target="byCenterTable">Table</button>
+      </figcaption>
+      <div class="chart" id="byCenterChart"></div>
+      <div class="table-view" id="byCenterTable" hidden></div>
+    </figure>
+    <figure class="card" id="inNowCard">
+      <figcaption><h2>In the centers right now</h2></figcaption>
+      <div class="scroll-x"><table class="data-table" id="inNowTable">
+        <thead><tr><th>Student</th><th>Center</th><th>Arrived</th><th>Time in session</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <p class="empty muted" id="inNowEmpty" hidden>Nobody is checked in right now.</p>
+    </figure>
+  </section>
+
+  <section class="two-col">
+    <figure class="card" id="trendCard">
+      <figcaption>
+        <h2>Daily visits</h2>
+        <button class="ghost-btn table-toggle" data-target="trendTable">Table</button>
+      </figcaption>
+      <div class="chart tall" id="trendChart"></div>
+      <div class="table-view" id="trendTable" hidden></div>
+    </figure>
+    <figure class="card" id="hoursCard">
+      <figcaption>
+        <h2>Busiest hours</h2>
+        <button class="ghost-btn table-toggle" data-target="hoursTable">Table</button>
+      </figcaption>
+      <div class="chart tall" id="hoursChart"></div>
+      <div class="table-view" id="hoursTable" hidden></div>
+    </figure>
+  </section>
+
+  <section aria-labelledby="rosterTitle">
+    <figure class="card">
+      <figcaption class="roster-head">
+        <h2 id="rosterTitle">Roster</h2>
+        <input type="search" id="rosterSearch" placeholder="Search students…" aria-label="Search students">
+      </figcaption>
+      <div class="scroll-x"><table class="data-table" id="rosterTable">
+        <thead><tr><th>Student</th><th>Center</th><th>Enrollment</th><th>Sessions left</th><th>Last activity</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <p class="muted" id="rosterCount"></p>
+    </figure>
+  </section>
+</main>
+
+<div id="tooltip" class="tooltip" hidden></div>
+
+<footer class="foot muted">
+  Data from Mathnasium Radius · refreshes automatically · history builds up while the app is running
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
