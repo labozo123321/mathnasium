@@ -148,6 +148,11 @@ module.exports = async (req, res) => {
       const center = url.searchParams.get('center') ? Number(url.searchParams.get('center')) : null;
       return json(res, 200, { days: service.trends(days, center) });
     }
+    if (path === '/api/center/all') {
+      await service.refresh();
+      service.detailProvider = service.detailProvider || new CenterDetailProvider(service.client);
+      return json(res, 200, await service.detailProvider.detailAll(service.centers));
+    }
     const centerMatch = /^\/api\/center\/(\d+)$/.exec(path);
     if (centerMatch) {
       await service.refresh();

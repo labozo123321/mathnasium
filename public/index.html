@@ -41,14 +41,7 @@
 </div>
 
 <main id="main" class="content">
-  <section class="kpis" id="kpiRow" aria-label="Headline numbers"></section>
-
-  <section aria-labelledby="centersTitle">
-    <h2 id="centersTitle">Centers</h2>
-    <div class="center-grid" id="centerGrid"></div>
-  </section>
-
-  <section id="centerDetail" hidden aria-label="Center detail">
+  <section id="centerDetail" aria-label="Center overview">
     <div class="detail-head">
       <h2 id="detailTitle"></h2>
       <span class="muted" id="detailNote"></span>
@@ -57,7 +50,7 @@
     <div class="detail-cols">
       <figure class="card map-card">
         <figcaption>
-          <h2>Where students come from</h2>
+          <h2 id="mapTitle">Where students come from</h2>
           <div class="map-toggles">
             <label><input type="checkbox" id="tglSchools" checked> Schools</label>
             <label><input type="checkbox" id="tglZips" checked> Neighborhoods</label>
@@ -74,10 +67,7 @@
       <div class="detail-side">
         <figure class="card">
           <figcaption><h2>Attending less than usual</h2></figcaption>
-          <div class="scroll-y"><table class="data-table" id="belowTable">
-            <thead><tr><th>Student</th><th>School</th><th>Last seen</th></tr></thead>
-            <tbody></tbody>
-          </table></div>
+          <div class="scroll-y" id="belowWrap"></div>
           <p class="empty muted" id="belowEmpty" hidden>Everyone's attendance is on track.</p>
         </figure>
         <figure class="card">
@@ -89,6 +79,11 @@
         </figure>
       </div>
     </div>
+  </section>
+
+  <section aria-labelledby="centersTitle">
+    <h2 id="centersTitle">Centers</h2>
+    <div class="center-grid" id="centerGrid"></div>
   </section>
 
   <section class="two-col">

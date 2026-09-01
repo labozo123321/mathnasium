@@ -125,9 +125,9 @@
   }
 
   async function loadDetail() {
-    if (!state.center) { state.detail = null; return; }
+    const path = state.center ? '/api/center/' + state.center : '/api/center/all';
     try {
-      state.detail = await apiFetch('/api/center/' + state.center);
+      state.detail = await apiFetch(path);
     } catch (e) {
       if (e && e.auth) throw e;
       state.detail = null;
@@ -170,22 +170,6 @@
     if (sel.options.length <= 1 && o.centers.length) {
       for (const c of o.centers) sel.appendChild(h('option', { value: c.id, text: c.name }));
     }
-  }
-
-  function renderKpis() {
-    const centers = visibleCenters();
-    const sum = (f) => centers.reduce((a, c) => a + (f(c) ?? 0), 0);
-    const anyData = centers.some((c) => c.checkedIn != null);
-    const kpis = [
-      { label: 'Students in session now', value: anyData ? sum((c) => c.checkedIn) : '—', hero: true },
-      { label: 'Staff on duty', value: anyData ? sum((c) => c.staffIn) : '—' },
-      { label: 'Visits today', value: anyData ? sum((c) => c.visitsToday) : '—' },
-      { label: 'Students on roster', value: anyData ? sum((c) => c.rosterCount) : '—' },
-    ];
-    $('#kpiRow').replaceChildren(...kpis.map((k) => h('div', { class: 'tile' + (k.hero ? ' hero' : '') }, [
-      h('div', { class: 'label', text: k.label }),
-      h('div', { class: 'value', text: String(k.value) }),
-    ])));
   }
 
   function sparkSvg(byHour) {
@@ -428,18 +412,27 @@
   }
 
   function renderDetail() {
-    const box = $('#centerDetail');
     const d = state.detail;
-    if (!state.center || !d) { box.hidden = true; return; }
-    box.hidden = false;
-    $('#detailTitle').textContent = d.name;
+    if (!d) return; // keep whatever is shown until data arrives
+    const allScope = !state.center;
+    $('#detailTitle').textContent = allScope ? 'All centers' : d.name;
     $('#detailNote').textContent = `${d.memberCount} members`;
+    $('#mapTitle').textContent = allScope
+      ? 'Where students come from — all centers' : 'Where students come from';
+
+    // attendance for this scope comes from the live overview
+    const centers = visibleCenters();
+    const sumOv = (f) => centers.reduce((a, c) => a + (f(c) || 0), 0);
+    const anyLive = centers.some((c) => c.checkedIn != null);
+    const inNow = anyLive ? sumOv((c) => c.checkedIn) : null;
+    const visitsToday = anyLive ? sumOv((c) => c.visitsToday) : null;
 
     const tiles = [
       { label: 'Enrolled students', value: d.enrolled, sub: 'currently enrolled' },
       { label: 'Active students', value: d.active, sub: 'attended in last 30 days' },
       { label: 'On hold', value: d.holds, sub: 'frozen memberships' },
-      { label: 'Avg length of stay', value: fmtMonths(d.avgTenureMonths), sub: 'since sign-up', wide: true },
+      { label: 'Attendance today', value: visitsToday ?? '—', sub: `${inNow ?? '—'} in session now` },
+      { label: 'Avg length of stay', value: fmtMonths(d.avgTenureMonths), sub: 'running average since sign-up' },
     ];
     $('#detailKpis').replaceChildren(...tiles.map((t) => h('div', { class: 'tile' }, [
       h('div', { class: 'label', text: t.label }),
@@ -447,19 +440,23 @@
       h('div', { class: 'sub', text: t.sub }),
     ])));
 
-    // below-average attendance
+    // below-average attendance (add a Center column in all-centers view)
     const below = d.belowAverage || [];
-    $('#belowTable tbody').replaceChildren(...below.map((r) => h('tr', {}, [
-      h('td', { text: r.name || '—' }),
-      h('td', { text: r.school || '—' }),
-      h('td', { class: 'num', text: r.daysSinceVisit == null ? '—' : `${r.daysSinceVisit}d ago` }),
-    ])));
+    const cols = allScope ? ['Student', 'Center', 'School', 'Last seen'] : ['Student', 'School', 'Last seen'];
+    $('#belowWrap').replaceChildren(h('table', { class: 'data-table' }, [
+      h('thead', {}, h('tr', {}, cols.map((c) => h('th', { text: c })))),
+      h('tbody', {}, below.map((r) => h('tr', {}, [
+        h('td', { text: r.name || '—' }),
+        ...(allScope ? [h('td', { text: r.center || '—' })] : []),
+        h('td', { text: r.school || '—' }),
+        h('td', { class: 'num', text: r.daysSinceVisit == null ? '—' : `${r.daysSinceVisit}d ago` }),
+      ]))),
+    ]));
     $('#belowEmpty').hidden = below.length > 0;
-    $('#belowTable').hidden = below.length === 0;
 
     // top schools
     const schools = d.schools || [];
-    $('#schoolsTable tbody').replaceChildren(...schools.slice(0, 40).map((s) => h('tr', {}, [
+    $('#schoolsTable tbody').replaceChildren(...schools.slice(0, 60).map((s) => h('tr', {}, [
       h('td', { text: s.name }),
       h('td', { class: 'num', text: String(s.count) }),
     ])));
@@ -549,7 +546,6 @@
   function renderAll() {
     if (!state.overview) return;
     renderChrome();
-    renderKpis();
     renderCenters();
     renderDetail();
     renderByCenter();
@@ -660,10 +656,10 @@
       await loadOverview();
       await Promise.all([
         loadTrends(),
-        loadDetail(),
         full || state.rosters.size === 0 ? loadRosters() : Promise.resolve(),
       ]);
       renderAll();
+      if (full) refreshDetail(); // heavier; don't block the overview paint
     } catch (e) {
       if (e && e.auth) showLock();
       else if (e && e.status === 503) showLock(e.msg);
@@ -674,7 +670,12 @@
     }
   }
 
+  function refreshDetail() {
+    loadDetail().then(renderDetail).catch((e) => { if (e && e.auth) showLock(); });
+  }
+
   refresh(true);
-  setInterval(() => refresh(false), 20000);
+  setInterval(() => refresh(false), 20000);       // live counters
+  setInterval(refreshDetail, 5 * 60000);          // stats + map
   setInterval(() => loadRosters().then(renderRoster).catch(() => {}), 5 * 60000);
 })();

@@ -82,14 +82,24 @@ app.get('/api/trends', (req, res) => {
 const { CenterDetailProvider } = require('./src/detailService');
 const { tzForCenter } = require('./src/dayStats');
 const detailProvider = new CenterDetailProvider(client);
+
+async function allCenters() {
+  if (store.centers.length) return store.centers;
+  const list = await client.getCenters();
+  return list.map((c) => ({ ...c, tz: tzForCenter(c.name) }));
+}
+
+app.get('/api/center/all', async (req, res) => {
+  try {
+    res.json(await detailProvider.detailAll(await allCenters()));
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 app.get('/api/center/:id', async (req, res) => {
   try {
-    let center = store.centers.find((c) => String(c.id) === req.params.id);
-    if (!center) {
-      const list = await client.getCenters();
-      const c = list.find((x) => String(x.id) === req.params.id);
-      if (c) center = { ...c, tz: tzForCenter(c.name) };
-    }
+    let center = (await allCenters()).find((c) => String(c.id) === req.params.id);
     if (!center) return res.status(404).json({ error: 'unknown center' });
     res.json(await detailProvider.detail(center));
   } catch (e) {

@@ -101,6 +101,7 @@ function computeCenterDetail(center, schoolRows, attendanceRows, geo) {
       name: `${x.r.StudentFirstName || ''} ${x.r.StudentLastName || ''}`.trim(),
       school: (x.r.SchoolName || '').trim() || null,
       daysSinceVisit: x.gap,
+      center: center.name,
     }));
 
   // aggregate counts by school and by ZIP (never by individual)
