@@ -18,8 +18,6 @@
     map: null,          // Leaflet map instance
     layers: null,       // { schools, zips } layer groups
   };
-  const SERIES1 = '#2a78d6';
-  const SERIES2 = '#eb6834';
 
   // ---------- tiny DOM helper ----------
   function h(tag, attrs = {}, children = []) {
@@ -306,15 +304,15 @@
     });
     const pts = data.map((d, i) => `${x(i)},${y(d.visits)}`).join(' ');
     const areaD = `M${x(0)},${y(0)} L${pts.split(' ').join(' L')} L${x(data.length - 1)},${y(0)} Z`;
-    svg.appendChild(h('path', { d: areaD, fill: 'var(--wash)', stroke: 'none' }));
+    svg.appendChild(h('path', { d: areaD, fill: 'var(--series-1-wash)', stroke: 'none' }));
     svg.appendChild(h('polyline', { points: pts, fill: 'none', stroke: 'var(--series-1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
     const last = data[data.length - 1];
-    svg.appendChild(h('circle', { cx: x(data.length - 1), cy: y(last.visits), r: 4.5, fill: 'var(--series-1)', stroke: 'var(--surface-1)', 'stroke-width': 2 }));
+    svg.appendChild(h('circle', { cx: x(data.length - 1), cy: y(last.visits), r: 4.5, fill: 'var(--series-1)', stroke: 'var(--surface)', 'stroke-width': 2 }));
     svg.appendChild(h('text', { x: x(data.length - 1) - 8, y: Math.max(y(last.visits) - 8, 12), 'text-anchor': 'end', class: 'val-label', text: last.visits.toLocaleString() }));
 
     // crosshair + tooltip
     const cross = h('line', { y1: top, y2: top + ih, stroke: 'var(--axis)', 'stroke-width': 1, visibility: 'hidden' });
-    const dot = h('circle', { r: 4.5, fill: 'var(--series-1)', stroke: 'var(--surface-1)', 'stroke-width': 2, visibility: 'hidden' });
+    const dot = h('circle', { r: 4.5, fill: 'var(--series-1)', stroke: 'var(--surface)', 'stroke-width': 2, visibility: 'hidden' });
     svg.appendChild(cross); svg.appendChild(dot);
     svg.appendChild(h('rect', {
       x: left, y: top, width: iw, height: ih, fill: 'transparent',
@@ -474,6 +472,43 @@
     return base + span * Math.sqrt(count / Math.max(max, 1));
   }
 
+  const TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  const TILE_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  const TILE_ATTR = '&copy; OpenStreetMap &copy; CARTO';
+
+  function isDarkTheme() {
+    const t = document.documentElement.dataset.theme;
+    return t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  function cssVar(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
+  // On-map key: what each colour means, plus a graduated size scale read off
+  // the data actually on screen.
+  function buildMapKey(d) {
+    const el = state.mapKeyEl;
+    if (!el) return;
+    const maxSchool = Math.max(1, ...(d.schools || []).map((s) => s.count));
+    const steps = [...new Set([1, Math.max(2, Math.round(maxSchool / 2)), maxSchool])]
+      .filter((n) => n > 0).sort((a, b) => a - b);
+    const sizes = steps.map((n) => {
+      const r = circleRadius(n, maxSchool, 6, 18);
+      return h('div', { class: 'key-size' }, [
+        h('i', { style: `width:${Math.round(r * 2)}px;height:${Math.round(r * 2)}px` }),
+        h('span', { text: String(n) }),
+      ]);
+    });
+    el.replaceChildren(
+      h('div', { class: 'key-title', text: 'Map key' }),
+      h('div', { class: 'key-row' }, [h('span', { class: 'key-swatch school' }), h('span', { text: 'School' })]),
+      h('div', { class: 'key-row' }, [h('span', { class: 'key-swatch zip' }), h('span', { text: 'Neighborhood (ZIP)' })]),
+      h('div', { class: 'key-sizes' }, sizes),
+      h('div', { class: 'key-title', style: 'margin:8px 0 0', text: 'circle size = students' }),
+    );
+  }
+
   function renderMap(d) {
     if (typeof L === 'undefined') {
       // Leaflet may still be loading; retry briefly, then show a fallback note.
@@ -490,41 +525,75 @@
       }
       return;
     }
+
+    const s1 = cssVar('--series-1', '#D62E22');
+    const s2 = cssVar('--series-2', '#0C90A8');
+    const surface = cssVar('--surface', '#ffffff');
+    const dark = isDarkTheme();
+
     if (!state.map) {
-      state.map = L.map('map', { scrollWheelZoom: false, attributionControl: true });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18, attribution: '© OpenStreetMap',
-      }).addTo(state.map);
+      state.map = L.map('map', { scrollWheelZoom: false });
       state.layers = { schools: L.layerGroup(), zips: L.layerGroup() };
+      L.control.scale({ imperial: true, metric: false, position: 'bottomleft' }).addTo(state.map);
+      const key = L.control({ position: 'bottomright' });
+      key.onAdd = () => {
+        const el = L.DomUtil.create('div', 'map-key');
+        L.DomEvent.disableClickPropagation(el);
+        state.mapKeyEl = el;
+        return el;
+      };
+      key.addTo(state.map);
     }
+
+    // muted basemap so the data reads clearly; follows the theme
+    const mode = dark ? 'dark' : 'light';
+    if (state.tileMode !== mode) {
+      if (state.tiles) state.map.removeLayer(state.tiles);
+      state.tiles = L.tileLayer(dark ? TILE_DARK : TILE_LIGHT, {
+        maxZoom: 18, attribution: TILE_ATTR,
+      }).addTo(state.map);
+      state.tileMode = mode;
+    }
+
     state.map.invalidateSize();
     state.layers.schools.clearLayers();
     state.layers.zips.clearLayers();
 
     const pts = [];
+
+    // Neighborhoods: soft dashed teal, drawn first so schools sit on top.
+    const maxZip = Math.max(1, ...(d.zips || []).map((z) => z.count));
+    for (const z of d.zips || []) {
+      if (z.lat == null || z.lng == null) continue;
+      pts.push([z.lat, z.lng]);
+      L.circleMarker([z.lat, z.lng], {
+        radius: circleRadius(z.count, maxZip, 10, 30),
+        color: s2, weight: 1.5, dashArray: '4 3',
+        fillColor: s2, fillOpacity: 0.16,
+      }).bindTooltip(
+        `<b>ZIP ${escapeHtml(z.zip)}</b><br>${z.count} student${z.count === 1 ? '' : 's'} live near here`,
+        { direction: 'top', sticky: true },
+      ).addTo(state.layers.zips);
+    }
+
+    // Schools: solid brand-red dots with a surface ring so they stay crisp.
     const maxSchool = Math.max(1, ...(d.schools || []).map((s) => s.count));
     for (const s of d.schools || []) {
       if (s.lat == null || s.lng == null) continue;
       pts.push([s.lat, s.lng]);
       L.circleMarker([s.lat, s.lng], {
         radius: circleRadius(s.count, maxSchool, 6, 18),
-        color: SERIES1, weight: 1.5, fillColor: SERIES1, fillOpacity: 0.55,
-      }).bindPopup(`<b>${escapeHtml(s.name)}</b><br>${s.count} student${s.count === 1 ? '' : 's'}`)
-        .addTo(state.layers.schools);
-    }
-    const maxZip = Math.max(1, ...(d.zips || []).map((z) => z.count));
-    for (const z of d.zips || []) {
-      if (z.lat == null || z.lng == null) continue;
-      pts.push([z.lat, z.lng]);
-      L.circleMarker([z.lat, z.lng], {
-        radius: circleRadius(z.count, maxZip, 8, 26),
-        color: SERIES2, weight: 1, fillColor: SERIES2, fillOpacity: 0.28,
-      }).bindPopup(`<b>ZIP ${escapeHtml(z.zip)}</b><br>${z.count} student${z.count === 1 ? '' : 's'} live near here`)
-        .addTo(state.layers.zips);
+        color: surface, weight: 2,
+        fillColor: s1, fillOpacity: 0.9,
+      }).bindTooltip(
+        `<b>${escapeHtml(s.name)}</b><br>${s.count} student${s.count === 1 ? '' : 's'}`,
+        { direction: 'top', sticky: true },
+      ).addTo(state.layers.schools);
     }
 
+    buildMapKey(d);
     applyMapToggles();
-    if (pts.length) state.map.fitBounds(pts, { padding: [30, 30], maxZoom: 13 });
+    if (pts.length) state.map.fitBounds(pts, { padding: [34, 34], maxZoom: 13 });
   }
 
   function applyMapToggles() {
@@ -583,6 +652,7 @@
     const next = cur === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
     try { localStorage.setItem('mn-theme', next); } catch (e) { /* private mode */ }
+    if (state.detail) renderMap(state.detail);
   });
   try {
     const saved = localStorage.getItem('mn-theme');
