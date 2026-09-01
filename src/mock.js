@@ -18,6 +18,15 @@ const CENTERS = [
   { CenterId: 2843, CenterName: 'St. Charles' },
 ];
 
+// Approximate real coordinates so the demo map lands near the right city.
+const CENTER_GEO = {
+  3516: [41.76, -88.29], 2931: [41.91, -88.14], 2480: [41.87, -88.07],
+  2507: [38.97, -77.39], 2644: [37.13, -121.65], 2788: [37.23, -121.80],
+  2843: [41.91, -88.31],
+};
+const MOCK_SCHOOLS = ['Lincoln Elementary', 'Washington Middle', 'Jefferson Elementary',
+  'Roosevelt Middle', 'Kennedy Elementary', 'Madison High', 'Hamilton Elementary'];
+
 // deterministic per-seed pseudo-random (mulberry32 - nearby seeds diverge)
 function rng(seed) {
   let a = seed >>> 0;
@@ -55,9 +64,57 @@ function busyness(hour) {
 class MockRadiusClient {
   constructor() {
     this.loggedIn = true;
+    this.isMock = true;
   }
 
   async login() { return true; }
+
+  // Synthetic per-center detail (stats + aggregate map data) for demo mode.
+  mockCenterDetail(center) {
+    const [clat, clng] = CENTER_GEO[center.id] || [39, -98];
+    const rand = rng(center.id * 101);
+    const nMembers = 45 + Math.floor(rand() * 45);
+    const schoolNames = MOCK_SCHOOLS.slice(0, 4 + Math.floor(rand() * 3));
+    const schoolCount = {}; const zipCount = {}; const zipGeo = {};
+    let holds = 0; let active = 0; const tenures = []; const belowAverage = [];
+    for (let i = 0; i < nMembers; i++) {
+      const school = schoolNames[Math.floor(rand() * schoolNames.length)];
+      schoolCount[school] = (schoolCount[school] || 0) + 1;
+      const zip = String(95000 + Math.floor(rand() * 6));
+      zipCount[zip] = (zipCount[zip] || 0) + 1;
+      zipGeo[zip] = [clat + (rand() - 0.5) * 0.14, clng + (rand() - 0.5) * 0.16];
+      const onHold = rand() < 0.12;
+      if (onHold) holds++;
+      tenures.push(1 + rand() * 30);
+      const days = Math.floor(rand() * 25);
+      if (!onHold && days <= 12) active++;
+      if (days > 10) {
+        belowAverage.push({
+          name: `${FIRST[Math.floor(rand() * FIRST.length)]} ${LAST[Math.floor(rand() * LAST.length)]}`,
+          school, daysSinceVisit: days + 5,
+        });
+      }
+    }
+    const schoolGeo = {};
+    schoolNames.forEach((s, i) => { schoolGeo[s] = [clat + (i - 2) * 0.03, clng + (i - 2) * 0.035]; });
+    return {
+      id: center.id,
+      name: center.name,
+      enrolled: nMembers - holds,
+      active,
+      holds,
+      memberCount: nMembers,
+      avgTenureMonths: tenures.reduce((a, b) => a + b, 0) / tenures.length,
+      geocodePending: 0,
+      belowAverage: belowAverage.sort((a, b) => b.daysSinceVisit - a.daysSinceVisit).slice(0, 20),
+      schools: Object.entries(schoolCount).map(([name, count]) => ({
+        name, count, lat: schoolGeo[name][0], lng: schoolGeo[name][1],
+      })).sort((a, b) => b.count - a.count),
+      zips: Object.entries(zipCount).map(([zip, count]) => ({
+        zip, count, lat: zipGeo[zip][0], lng: zipGeo[zip][1],
+      })).sort((a, b) => b.count - a.count),
+    };
+  }
 
   async getCenters() {
     return CENTERS.map((c) => ({ id: c.CenterId, name: c.CenterName }));

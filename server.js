@@ -45,7 +45,25 @@ const poller = new Poller(client, store, {
 });
 
 const app = express();
+app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Optional password protection (mandatory on Vercel; opt-in locally via .env)
+const { isAuthenticated, checkPassword, authCookieHeader } = require('./src/auth');
+const DASH_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
+
+app.post('/api/login', (req, res) => {
+  if (checkPassword(req.body && req.body.password, DASH_PASSWORD)) {
+    res.setHeader('Set-Cookie', authCookieHeader(DASH_PASSWORD, req));
+    return res.json({ ok: true });
+  }
+  res.status(401).json({ error: 'Wrong password' });
+});
+
+app.use('/api', (req, res, next) => {
+  if (isAuthenticated(req, DASH_PASSWORD)) return next();
+  res.status(401).json({ error: 'auth required' });
+});
 
 app.get('/api/overview', (req, res) => {
   res.json(store.overview());
@@ -59,6 +77,24 @@ app.get('/api/trends', (req, res) => {
   const days = Math.min(Number(req.query.days) || 30, 120);
   const center = req.query.center ? Number(req.query.center) : null;
   res.json({ days: store.trends(days, center) });
+});
+
+const { CenterDetailProvider } = require('./src/detailService');
+const { tzForCenter } = require('./src/dayStats');
+const detailProvider = new CenterDetailProvider(client);
+app.get('/api/center/:id', async (req, res) => {
+  try {
+    let center = store.centers.find((c) => String(c.id) === req.params.id);
+    if (!center) {
+      const list = await client.getCenters();
+      const c = list.find((x) => String(x.id) === req.params.id);
+      if (c) center = { ...c, tz: tzForCenter(c.name) };
+    }
+    if (!center) return res.status(404).json({ error: 'unknown center' });
+    res.json(await detailProvider.detail(center));
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
 });
 
 app.listen(PORT, HOST, () => {

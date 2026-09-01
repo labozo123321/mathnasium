@@ -11,6 +11,18 @@ A live dashboard for your Mathnasium centers, powered by your Radius
 - **Trends** - daily visits and busiest hours (the app records its own history
   while it runs, since Radius only exposes the live check-in state)
 
+Pick a single center (top filter or click a center card) to open its
+**detail view**:
+
+- **Enrolled / Active / On-hold** counts and **average length of stay**
+- **Attending less than usual** - enrolled students whose gap since their last
+  visit is longer than the center's average, so you can follow up
+- **A map of where students come from** - a circle on each school sized by how
+  many of your students attend it, plus neighborhood-density circles by ZIP
+  area. The map uses only **public places** (school and ZIP-area locations);
+  individual student home addresses are never plotted, geocoded, or sent
+  anywhere.
+
 Everything auto-refreshes; light and dark theme included.
 
 ## Quick start
@@ -40,6 +52,43 @@ only reports the *current* state, the app writes daily rollups (visits, peak
 concurrency, arrivals per hour) to `data/history.json` - the trend charts
 get richer the longer the app runs. Keep it running on a machine that's on
 during center hours (a spare laptop, a mini PC, etc.) for best history.
+
+## Put it online with Vercel (free)
+
+Running on [Vercel](https://vercel.com) means the dashboard lives at a URL
+you can open from any phone or laptop, with nothing to keep running at home.
+
+1. Sign in to Vercel with your GitHub account → **Add New… → Project** →
+   import this repository (pick the branch this code is on if asked).
+   Framework preset: **Other**. Deploy - no settings needed.
+2. Open the URL. The dashboard password is **1234** (see below to change it).
+3. The page then asks for your **Radius username and password** - the same
+   login you use at radius.mathnasium.com. It's checked against Radius,
+   remembered in that browser only, and your real centers appear. (On a new
+   phone/browser you enter it once again.)
+
+Optional extras, via **Settings → Environment Variables** in Vercel (each
+takes effect after a redeploy: Deployments → ⋯ on the latest → Redeploy):
+
+- `DASHBOARD_PASSWORD` - change the viewer password from the default
+  **1234**. The page is on a public URL and shows student names, so pick
+  something harder to guess.
+- `RADIUS_USERNAME` / `RADIUS_PASSWORD` - store the Radius login on the
+  server instead of per-browser; nobody has to type it into the page, and
+  the daily history cron can record days even when nobody views.
+- **Storage → Create Database → Upstash Redis** (free) - keeps trend
+  history across redeploys and restarts.
+
+How the Vercel version differs from running locally:
+
+- There is no background poller. Data is fetched from Radius when someone
+  views the dashboard (shared/cached for ~25 s across viewers).
+- Daily history (visits, peak, busiest hours) is reconstructed from Radius's
+  own arrival/departure times, so a single evening view captures the whole
+  day - and a built-in daily cron (04:30 UTC, after all centers close)
+  records each day even if nobody looked.
+- Without Upstash Redis, history is kept in memory only and fades on
+  redeploys/cold starts; "today" always works regardless.
 
 ## Good to know
 

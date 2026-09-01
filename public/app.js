@@ -14,7 +14,12 @@
     center: '',         // '' = all centers
     days: 30,
     search: '',
+    detail: null,       // per-center detail payload
+    map: null,          // Leaflet map instance
+    layers: null,       // { schools, zips } layer groups
   };
+  const SERIES1 = '#2a78d6';
+  const SERIES2 = '#eb6834';
 
   // ---------- tiny DOM helper ----------
   function h(tag, attrs = {}, children = []) {
@@ -84,15 +89,23 @@
   }
 
   // ---------- data ----------
+  async function apiFetch(path) {
+    const res = await fetch(path);
+    if (res.status === 401) throw { auth: true };
+    if (!res.ok) {
+      let msg = 'Request failed (' + res.status + ')';
+      try { msg = (await res.json()).error || msg; } catch (e) { /* non-JSON error */ }
+      throw { msg, status: res.status };
+    }
+    return res.json();
+  }
   async function loadOverview() {
-    const res = await fetch('/api/overview');
-    state.overview = await res.json();
+    state.overview = await apiFetch('/api/overview');
   }
   async function loadTrends() {
     const q = new URLSearchParams({ days: state.days });
     if (state.center) q.set('center', state.center);
-    const res = await fetch('/api/trends?' + q);
-    state.trends = (await res.json()).days;
+    state.trends = (await apiFetch('/api/trends?' + q)).days;
   }
   async function loadRosters() {
     if (!state.overview) return;
@@ -100,8 +113,7 @@
       ? state.overview.centers.filter((c) => String(c.id) === state.center)
       : state.overview.centers;
     await Promise.all(wanted.map(async (c) => {
-      const res = await fetch('/api/roster/' + c.id);
-      state.rosters.set(c.id, (await res.json()).students || []);
+      state.rosters.set(c.id, (await apiFetch('/api/roster/' + c.id)).students || []);
     }));
   }
 
@@ -110,6 +122,16 @@
     return state.center
       ? state.overview.centers.filter((c) => String(c.id) === state.center)
       : state.overview.centers;
+  }
+
+  async function loadDetail() {
+    if (!state.center) { state.detail = null; return; }
+    try {
+      state.detail = await apiFetch('/api/center/' + state.center);
+    } catch (e) {
+      if (e && e.auth) throw e;
+      state.detail = null;
+    }
   }
 
   // ---------- renders ----------
@@ -123,6 +145,26 @@
     $('#lastSync').textContent = o.lastSync
       ? 'Updated ' + new Date(o.lastSync).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
       : 'Waiting for first sync…';
+
+    const note = $('#configNote');
+    note.hidden = !o.note;
+    if (o.note) {
+      note.replaceChildren(document.createTextNode(o.note + ' '));
+      if (o.canSetup) {
+        note.appendChild(h('button', {
+          class: 'ghost-btn', type: 'button', text: 'Connect Radius',
+          onclick: () => { $('#setup').hidden = false; $('#setupUser').focus(); },
+        }));
+      }
+    }
+
+    // first time we see demo data, offer the connect form right away
+    if (o.canSetup && !state.setupOffered) {
+      state.setupOffered = true;
+      let dismissed = false;
+      try { dismissed = sessionStorage.getItem('mn-setup-skip') === '1'; } catch (e) { /* private mode */ }
+      if (!dismissed) { $('#setup').hidden = false; $('#setupUser').focus(); }
+    }
 
     const sel = $('#centerFilter');
     if (sel.options.length <= 1 && o.centers.length) {
@@ -379,11 +421,137 @@
       : `${filtered.length} of ${rows.length} students` + (shown.length < filtered.length ? ` (showing first ${shown.length})` : '');
   }
 
+  function fmtMonths(m) {
+    if (m == null) return '—';
+    if (m < 12) return `${m.toFixed(1)} mo`;
+    return `${(m / 12).toFixed(1)} yr`;
+  }
+
+  function renderDetail() {
+    const box = $('#centerDetail');
+    const d = state.detail;
+    if (!state.center || !d) { box.hidden = true; return; }
+    box.hidden = false;
+    $('#detailTitle').textContent = d.name;
+    $('#detailNote').textContent = `${d.memberCount} members`;
+
+    const tiles = [
+      { label: 'Enrolled students', value: d.enrolled, sub: 'currently enrolled' },
+      { label: 'Active students', value: d.active, sub: 'attended in last 30 days' },
+      { label: 'On hold', value: d.holds, sub: 'frozen memberships' },
+      { label: 'Avg length of stay', value: fmtMonths(d.avgTenureMonths), sub: 'since sign-up', wide: true },
+    ];
+    $('#detailKpis').replaceChildren(...tiles.map((t) => h('div', { class: 'tile' }, [
+      h('div', { class: 'label', text: t.label }),
+      h('div', { class: 'value', text: String(t.value ?? '—') }),
+      h('div', { class: 'sub', text: t.sub }),
+    ])));
+
+    // below-average attendance
+    const below = d.belowAverage || [];
+    $('#belowTable tbody').replaceChildren(...below.map((r) => h('tr', {}, [
+      h('td', { text: r.name || '—' }),
+      h('td', { text: r.school || '—' }),
+      h('td', { class: 'num', text: r.daysSinceVisit == null ? '—' : `${r.daysSinceVisit}d ago` }),
+    ])));
+    $('#belowEmpty').hidden = below.length > 0;
+    $('#belowTable').hidden = below.length === 0;
+
+    // top schools
+    const schools = d.schools || [];
+    $('#schoolsTable tbody').replaceChildren(...schools.slice(0, 40).map((s) => h('tr', {}, [
+      h('td', { text: s.name }),
+      h('td', { class: 'num', text: String(s.count) }),
+    ])));
+
+    const pending = $('#mapPending');
+    if (d.geocodePending > 0) {
+      pending.hidden = false;
+      pending.textContent = `Locating ${d.geocodePending} more place(s) on the map — they'll appear on the next refresh.`;
+    } else pending.hidden = true;
+
+    renderMap(d);
+  }
+
+  function circleRadius(count, max, base, span) {
+    return base + span * Math.sqrt(count / Math.max(max, 1));
+  }
+
+  function renderMap(d) {
+    if (typeof L === 'undefined') {
+      // Leaflet may still be loading; retry briefly, then show a fallback note.
+      state.mapRetries = (state.mapRetries || 0) + 1;
+      if (state.mapRetries <= 20) { setTimeout(() => renderMap(d), 400); return; }
+      const el = $('#map');
+      if (el && !el.dataset.failed) {
+        el.dataset.failed = '1';
+        el.style.display = 'flex';
+        el.style.alignItems = 'center';
+        el.style.justifyContent = 'center';
+        el.style.padding = '20px';
+        el.textContent = 'Map library could not load. The school and neighborhood counts are in the tables.';
+      }
+      return;
+    }
+    if (!state.map) {
+      state.map = L.map('map', { scrollWheelZoom: false, attributionControl: true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18, attribution: '© OpenStreetMap',
+      }).addTo(state.map);
+      state.layers = { schools: L.layerGroup(), zips: L.layerGroup() };
+    }
+    state.map.invalidateSize();
+    state.layers.schools.clearLayers();
+    state.layers.zips.clearLayers();
+
+    const pts = [];
+    const maxSchool = Math.max(1, ...(d.schools || []).map((s) => s.count));
+    for (const s of d.schools || []) {
+      if (s.lat == null || s.lng == null) continue;
+      pts.push([s.lat, s.lng]);
+      L.circleMarker([s.lat, s.lng], {
+        radius: circleRadius(s.count, maxSchool, 6, 18),
+        color: SERIES1, weight: 1.5, fillColor: SERIES1, fillOpacity: 0.55,
+      }).bindPopup(`<b>${escapeHtml(s.name)}</b><br>${s.count} student${s.count === 1 ? '' : 's'}`)
+        .addTo(state.layers.schools);
+    }
+    const maxZip = Math.max(1, ...(d.zips || []).map((z) => z.count));
+    for (const z of d.zips || []) {
+      if (z.lat == null || z.lng == null) continue;
+      pts.push([z.lat, z.lng]);
+      L.circleMarker([z.lat, z.lng], {
+        radius: circleRadius(z.count, maxZip, 8, 26),
+        color: SERIES2, weight: 1, fillColor: SERIES2, fillOpacity: 0.28,
+      }).bindPopup(`<b>ZIP ${escapeHtml(z.zip)}</b><br>${z.count} student${z.count === 1 ? '' : 's'} live near here`)
+        .addTo(state.layers.zips);
+    }
+
+    applyMapToggles();
+    if (pts.length) state.map.fitBounds(pts, { padding: [30, 30], maxZoom: 13 });
+  }
+
+  function applyMapToggles() {
+    if (!state.map || !state.layers) return;
+    const wantS = $('#tglSchools').checked;
+    const wantZ = $('#tglZips').checked;
+    toggleLayer(state.layers.zips, wantZ);   // draw density under schools
+    toggleLayer(state.layers.schools, wantS);
+  }
+  function toggleLayer(layer, want) {
+    const on = state.map.hasLayer(layer);
+    if (want && !on) layer.addTo(state.map);
+    if (!want && on) state.map.removeLayer(layer);
+  }
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+
   function renderAll() {
     if (!state.overview) return;
     renderChrome();
     renderKpis();
     renderCenters();
+    renderDetail();
     renderByCenter();
     renderInNow();
     renderTrend();
@@ -401,6 +569,8 @@
   $('#centerFilter').addEventListener('change', (e) => setCenter(e.target.value));
   $('#rangeFilter').addEventListener('change', (e) => { state.days = Number(e.target.value); refresh(true); });
   $('#rosterSearch').addEventListener('input', (e) => { state.search = e.target.value; renderRoster(); });
+  $('#tglSchools').addEventListener('change', applyMapToggles);
+  $('#tglZips').addEventListener('change', applyMapToggles);
 
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.table-toggle');
@@ -423,6 +593,63 @@
     if (saved) document.documentElement.dataset.theme = saved;
   } catch (e) { /* private mode */ }
 
+  // ---------- lock overlay ----------
+  function showLock(message) {
+    $('#lock').hidden = false;
+    if (message) $('#lockMsg').textContent = message;
+    $('#lockPass').focus();
+  }
+  $('#lockForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: $('#lockPass').value }),
+    });
+    if (res.ok) {
+      $('#lock').hidden = true;
+      $('#lockPass').value = '';
+      $('#lockMsg').textContent = 'Enter the dashboard password to continue.';
+      refresh(true);
+    } else {
+      $('#lockMsg').textContent = 'Wrong password - try again.';
+    }
+  });
+
+  // ---------- Radius connect overlay ----------
+  $('#setupForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('#setupErr');
+    err.hidden = true;
+    const btn = $('#setupGo');
+    btn.disabled = true;
+    btn.textContent = 'Checking with Radius…';
+    try {
+      const res = await fetch('/api/radius-setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: $('#setupUser').value, password: $('#setupPass').value }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        $('#setup').hidden = true;
+        $('#setupPass').value = '';
+        state.rosters.clear();
+        refresh(true);
+      } else {
+        err.textContent = body.error || 'That login did not work - try again.';
+        err.hidden = false;
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Connect';
+    }
+  });
+  $('#setupSkip').addEventListener('click', () => {
+    $('#setup').hidden = true;
+    try { sessionStorage.setItem('mn-setup-skip', '1'); } catch (e) { /* private mode */ }
+  });
+
   // ---------- refresh loop ----------
   let refreshing = false;
   async function refresh(full) {
@@ -431,10 +658,16 @@
     $('#main').classList.add('refreshing');
     try {
       await loadOverview();
-      await Promise.all([loadTrends(), full || state.rosters.size === 0 ? loadRosters() : Promise.resolve()]);
+      await Promise.all([
+        loadTrends(),
+        loadDetail(),
+        full || state.rosters.size === 0 ? loadRosters() : Promise.resolve(),
+      ]);
       renderAll();
     } catch (e) {
-      $('#lastSync').textContent = 'Connection lost - retrying…';
+      if (e && e.auth) showLock();
+      else if (e && e.status === 503) showLock(e.msg);
+      else $('#lastSync').textContent = (e && e.msg) ? e.msg : 'Connection lost - retrying…';
     } finally {
       $('#main').classList.remove('refreshing');
       refreshing = false;

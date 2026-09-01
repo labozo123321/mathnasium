@@ -106,6 +106,12 @@ h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; color: var(--text-seco
 }
 .ghost-btn:hover { background: var(--wash); }
 
+.config-note {
+  margin: 14px 20px 0; padding: 10px 14px;
+  background: var(--wash); border: 1px solid var(--border); border-radius: 8px;
+  font-size: 13px; color: var(--text-secondary);
+}
+
 .filters {
   display: flex; gap: 16px; align-items: end; flex-wrap: wrap;
   padding: 14px 20px 0;
@@ -149,6 +155,23 @@ h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; color: var(--text-seco
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--de-emphasis); }
 .dot.on { background: var(--status-good); }
 
+/* ---- per-center detail ---- */
+.detail-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.detail-head h2 { font-size: 20px; color: var(--text-primary); margin: 0; }
+.detail-cols { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; margin-top: 14px; }
+@media (max-width: 900px) { .detail-cols { grid-template-columns: 1fr; } }
+.detail-side { display: grid; gap: 18px; align-content: start; }
+.map-card figcaption { margin-bottom: 10px; }
+.map-toggles { display: flex; gap: 12px; font-size: 12px; color: var(--text-secondary); }
+.map-toggles label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+#map { width: 100%; height: 440px; border-radius: 8px; z-index: 0; background: var(--page); }
+.map-legend { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; flex-wrap: wrap; }
+.key-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: middle; }
+.key-dot.school { background: var(--series-1); }
+.key-dot.zip { background: var(--series-2); opacity: 0.65; }
+.scroll-y { max-height: 300px; overflow-y: auto; }
+.leaflet-popup-content { font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; }
+
 /* ---- cards / charts ---- */
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
@@ -179,6 +202,25 @@ figure.card figcaption { display: flex; justify-content: space-between; align-it
 .table-view .num { font-variant-numeric: tabular-nums; }
 
 .empty { padding: 18px 0; }
+
+/* ---- lock overlay ---- */
+.lock {
+  position: fixed; inset: 0; z-index: 30;
+  background: var(--page);
+  display: flex; align-items: center; justify-content: center;
+}
+.lock[hidden] { display: none; }
+.lock-card {
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+  padding: 26px 28px; width: min(340px, 90vw);
+  display: grid; gap: 10px;
+}
+.lock-card h2 { margin: 0; font-size: 16px; color: var(--text-primary); }
+.lock-card input {
+  background: var(--page); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; font: inherit;
+}
+.lock-card .err-msg { color: var(--series-2); font-size: 12px; }
 
 /* ---- tooltip ---- */
 .tooltip {

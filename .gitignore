@@ -6,3 +6,7 @@ data/
 
 node_modules/
 npm-debug.log
+
+# local test scratch (may contain real data)
+cd.json
+ch.json
