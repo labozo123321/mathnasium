@@ -155,6 +155,23 @@ h2 { font-size: 13px; margin: 0 0 10px; font-weight: 600; color: var(--text-seco
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--de-emphasis); }
 .dot.on { background: var(--status-good); }
 
+/* ---- per-center detail ---- */
+.detail-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.detail-head h2 { font-size: 20px; color: var(--text-primary); margin: 0; }
+.detail-cols { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; margin-top: 14px; }
+@media (max-width: 900px) { .detail-cols { grid-template-columns: 1fr; } }
+.detail-side { display: grid; gap: 18px; align-content: start; }
+.map-card figcaption { margin-bottom: 10px; }
+.map-toggles { display: flex; gap: 12px; font-size: 12px; color: var(--text-secondary); }
+.map-toggles label { display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+#map { width: 100%; height: 440px; border-radius: 8px; z-index: 0; background: var(--page); }
+.map-legend { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; flex-wrap: wrap; }
+.key-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: middle; }
+.key-dot.school { background: var(--series-1); }
+.key-dot.zip { background: var(--series-2); opacity: 0.65; }
+.scroll-y { max-height: 300px; overflow-y: auto; }
+.leaflet-popup-content { font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; }
+
 /* ---- cards / charts ---- */
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }

@@ -13,6 +13,7 @@
 const { RadiusClient } = require('../src/radiusClient');
 const { MockRadiusClient } = require('../src/mock');
 const { DashboardService } = require('../src/service');
+const { CenterDetailProvider } = require('../src/detailService');
 const {
   isAuthenticated, checkPassword, authCookieHeader, readJsonBody, parseCookies,
 } = require('../src/auth');
@@ -146,6 +147,14 @@ module.exports = async (req, res) => {
       const days = Math.min(Number(url.searchParams.get('days')) || 30, 120);
       const center = url.searchParams.get('center') ? Number(url.searchParams.get('center')) : null;
       return json(res, 200, { days: service.trends(days, center) });
+    }
+    const centerMatch = /^\/api\/center\/(\d+)$/.exec(path);
+    if (centerMatch) {
+      await service.refresh();
+      const center = service.centers.find((c) => String(c.id) === centerMatch[1]);
+      if (!center) return json(res, 404, { error: 'unknown center' });
+      service.detailProvider = service.detailProvider || new CenterDetailProvider(service.client);
+      return json(res, 200, await service.detailProvider.detail(center));
     }
   } catch (e) {
     return json(res, 502, { error: 'Radius sync failed: ' + e.message });

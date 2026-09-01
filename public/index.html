@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mathnasium Live</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232a78d6'/%3E%3Ctext x='16' y='23' font-size='19' font-weight='700' font-family='system-ui' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="style.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 </head>
 <body>
 <header class="topbar">
@@ -44,6 +46,49 @@
   <section aria-labelledby="centersTitle">
     <h2 id="centersTitle">Centers</h2>
     <div class="center-grid" id="centerGrid"></div>
+  </section>
+
+  <section id="centerDetail" hidden aria-label="Center detail">
+    <div class="detail-head">
+      <h2 id="detailTitle"></h2>
+      <span class="muted" id="detailNote"></span>
+    </div>
+    <div class="kpis" id="detailKpis"></div>
+    <div class="detail-cols">
+      <figure class="card map-card">
+        <figcaption>
+          <h2>Where students come from</h2>
+          <div class="map-toggles">
+            <label><input type="checkbox" id="tglSchools" checked> Schools</label>
+            <label><input type="checkbox" id="tglZips" checked> Neighborhoods</label>
+          </div>
+        </figcaption>
+        <div id="map"></div>
+        <p class="map-legend muted">
+          <span class="key-dot school"></span> School (circle size = students)
+          &nbsp;·&nbsp;
+          <span class="key-dot zip"></span> Neighborhood density (by ZIP)
+        </p>
+        <p class="muted" id="mapPending" hidden></p>
+      </figure>
+      <div class="detail-side">
+        <figure class="card">
+          <figcaption><h2>Attending less than usual</h2></figcaption>
+          <div class="scroll-y"><table class="data-table" id="belowTable">
+            <thead><tr><th>Student</th><th>School</th><th>Last seen</th></tr></thead>
+            <tbody></tbody>
+          </table></div>
+          <p class="empty muted" id="belowEmpty" hidden>Everyone's attendance is on track.</p>
+        </figure>
+        <figure class="card">
+          <figcaption><h2>Top schools</h2></figcaption>
+          <div class="scroll-y"><table class="data-table" id="schoolsTable">
+            <thead><tr><th>School</th><th>Students</th></tr></thead>
+            <tbody></tbody>
+          </table></div>
+        </figure>
+      </div>
+    </div>
   </section>
 
   <section class="two-col">

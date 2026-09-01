@@ -11,6 +11,18 @@ A live dashboard for your Mathnasium centers, powered by your Radius
 - **Trends** - daily visits and busiest hours (the app records its own history
   while it runs, since Radius only exposes the live check-in state)
 
+Pick a single center (top filter or click a center card) to open its
+**detail view**:
+
+- **Enrolled / Active / On-hold** counts and **average length of stay**
+- **Attending less than usual** - enrolled students whose gap since their last
+  visit is longer than the center's average, so you can follow up
+- **A map of where students come from** - a circle on each school sized by how
+  many of your students attend it, plus neighborhood-density circles by ZIP
+  area. The map uses only **public places** (school and ZIP-area locations);
+  individual student home addresses are never plotted, geocoded, or sent
+  anywhere.
+
 Everything auto-refreshes; light and dark theme included.
 
 ## Quick start

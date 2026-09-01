@@ -140,6 +140,93 @@ class RadiusClient {
     const data = await this.getJson(`/EmployeeAttendance/EmployeeAttendances_Read?centerId=${centerId}`);
     return data.Data || [];
   }
+
+  // --- Kendo report grids (POST with an antiforgery token) ---
+
+  // Fetch and cache the antiforgery token (session-scoped, reusable). Getting
+  // it also drops the paired __RequestVerificationToken cookie into the jar.
+  async #getToken(pagePath) {
+    if (this.token) return this.token;
+    const res = await this.fetchRaw(pagePath);
+    const html = await res.text();
+    const m = html.match(/name="__RequestVerificationToken" type="hidden" value="([^"]+)"/);
+    if (process.env.DEBUG_RADIUS) {
+      this.log.warn?.(`[radius] getToken ${pagePath}: status=${res.status} tokenFound=${!!m} cookies=[${[...this.jar.cookies.keys()].join(',')}]`);
+    }
+    if (!m) throw new Error('Could not read a form token from ' + pagePath);
+    this.token = m[1];
+    return this.token;
+  }
+
+  // POST a Kendo DataSourceRequest grid once and return all rows. Radius grids
+  // ignore paging when pageSize is large, so one call returns everything.
+  async #postGridOnce(path, pagePath) {
+    const token = await this.#getToken(pagePath);
+    const body = `__RequestVerificationToken=${encodeURIComponent(token)}&sort=&page=1&pageSize=20000&group=&filter=`;
+    const res = await this.fetchRaw(path, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body,
+    });
+    const type = res.headers.get('content-type') || '';
+    if (res.status === 200 && type.includes('json')) {
+      const rows = (await res.json()).Data || [];
+      if (process.env.DEBUG_RADIUS) {
+        const centers = new Set(rows.map((r) => r.CenterId));
+        this.log.warn?.(`[radius] ${path}: rows=${rows.length} distinctCenters=${centers.size}`);
+      }
+      return rows;
+    }
+    const err = new Error(`Radius returned ${res.status} (${type}) for ${path}`);
+    err.transient = true;
+    throw err;
+  }
+
+  // Run a report flow (select centers + read), re-authenticating and re-running
+  // the whole flow once if the session/token has gone stale. `prepare` must
+  // re-establish any per-session state (e.g. center selection) each attempt.
+  async #runReport(prepare, read) {
+    if (!this.loggedIn) await this.login();
+    try {
+      await prepare();
+      return await read();
+    } catch (e) {
+      if (!e.transient) throw e;
+      this.log.warn?.('[radius] report retry after: ' + e.message);
+      this.token = null;
+      this.loggedIn = false;
+      await this.login();
+      await prepare();
+      return read();
+    }
+  }
+
+  // Reports honor the "selected centers" stored in the session, so select them
+  // all before reading a report that should span every center.
+  async selectAllCenters() {
+    const centers = await this.getCenters();
+    const ids = centers.map((c) => c.id);
+    const res = await this.fetchRaw('/Menu/setGlobalMultiCenterSession', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ ctrIds: ids, vcIds: [] }),
+    });
+    if (process.env.DEBUG_RADIUS) this.log.warn?.(`[radius] selectAllCenters: status=${res.status} ids=${ids.length}`);
+  }
+
+  // Per-student records: name, enrollment status, signup date, school, and the
+  // home ZipCode. We use only the school name and the ZIP (for aggregate
+  // counts) - never an individual street address.
+  async getSchoolReport() {
+    return this.#runReport(
+      () => this.selectAllCenters(),
+      () => this.#postGridOnce('/SchoolReport/SchoolReport_Read', '/SchoolReport'),
+    );
+  }
 }
 
 module.exports = { RadiusClient, BASE };

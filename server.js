@@ -79,6 +79,24 @@ app.get('/api/trends', (req, res) => {
   res.json({ days: store.trends(days, center) });
 });
 
+const { CenterDetailProvider } = require('./src/detailService');
+const { tzForCenter } = require('./src/dayStats');
+const detailProvider = new CenterDetailProvider(client);
+app.get('/api/center/:id', async (req, res) => {
+  try {
+    let center = store.centers.find((c) => String(c.id) === req.params.id);
+    if (!center) {
+      const list = await client.getCenters();
+      const c = list.find((x) => String(x.id) === req.params.id);
+      if (c) center = { ...c, tz: tzForCenter(c.name) };
+    }
+    if (!center) return res.status(404).json({ error: 'unknown center' });
+    res.json(await detailProvider.detail(center));
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, HOST, () => {
   console.log(`Mathnasium dashboard ${MOCK ? '(MOCK data) ' : ''}running at http://${HOST}:${PORT}`);
   poller.start();
