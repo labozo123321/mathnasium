@@ -21,12 +21,22 @@ class DashboardService {
     this.lastSync = null;
     this.lastPassAt = 0;
     this.inflight = null;
+    this.sync = { failures: 0, lastError: null, lastSuccessAt: null };
   }
 
   async refresh() {
     if (Date.now() - this.lastPassAt < this.cacheTtlMs && this.snapshots.size) return;
     if (this.inflight) return this.inflight;
-    this.inflight = this.#pass().finally(() => { this.inflight = null; });
+    this.inflight = this.#pass()
+      .then(() => { this.sync.failures = 0; this.sync.lastError = null; this.sync.lastSuccessAt = new Date().toISOString(); })
+      .catch((e) => {
+        this.sync.failures += 1;
+        this.sync.lastError = e.message;
+        this.lastPassAt = Date.now(); // don't hammer Radius while it's failing
+        if (!this.snapshots.size) throw e; // nothing cached yet - surface the error
+        // otherwise keep serving the last good snapshot and flag it as stale
+      })
+      .finally(() => { this.inflight = null; });
     return this.inflight;
   }
 
@@ -73,6 +83,7 @@ class DashboardService {
       mode: this.mode,
       lastSync: this.lastSync,
       persistentHistory: this.persistent,
+      sync: { ...this.sync },
       centers: this.centers.map((c) => {
         const s = this.snapshots.get(c.id) || {};
         return {

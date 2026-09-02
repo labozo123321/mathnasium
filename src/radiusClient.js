@@ -20,7 +20,8 @@ class CookieJar {
       if (eq < 1) continue;
       const name = pair.slice(0, eq).trim();
       const value = pair.slice(eq + 1).trim();
-      const expired = /expires=Thu, 01-Jan-1970/i.test(line) || value === '';
+      const exp = /;\s*expires=([^;]+)/i.exec(line);
+      const expired = value === '' || (exp && !Number.isNaN(Date.parse(exp[1])) && Date.parse(exp[1]) < Date.now());
       if (expired) this.cookies.delete(name);
       else this.cookies.set(name, value);
     }
@@ -44,6 +45,7 @@ class RadiusClient {
     this.loggedIn = false;
     this.loginPromise = null;
     this.centers = [];
+    this.reportChain = Promise.resolve();
   }
 
   async fetchRaw(path, opts = {}) {
@@ -75,6 +77,7 @@ class RadiusClient {
     }
     this.jar.clear();
     this.loggedIn = false;
+    this.token = null;
 
     const page = await this.fetchRaw('/Account/Login');
     const html = await page.text();
@@ -117,8 +120,12 @@ class RadiusClient {
     return this.getJson(path, true);
   }
 
-  // The check-in page embeds the list of centers this account can see.
-  async getCenters() {
+  // The check-in page embeds the list of centers this account can see. The
+  // list is cached: loading that page also resets the session's "selected
+  // centers" (which the reports depend on), so it is visited as rarely as
+  // possible.
+  async getCenters({ refresh = false } = {}) {
+    if (this.centers.length && !refresh) return this.centers;
     if (!this.loggedIn) await this.login();
     const res = await this.fetchRaw('/Attendance/StudentCheckIn');
     const html = await res.text();
@@ -149,11 +156,18 @@ class RadiusClient {
     if (this.token) return this.token;
     const res = await this.fetchRaw(pagePath);
     const html = await res.text();
+    // Report pages answer 403 once several centers are selected, but still
+    // render the form (token included); only a missing token means the
+    // session is really gone, and that is retried by #runReport.
     const m = html.match(/name="__RequestVerificationToken" type="hidden" value="([^"]+)"/);
     if (process.env.DEBUG_RADIUS) {
       this.log.warn?.(`[radius] getToken ${pagePath}: status=${res.status} tokenFound=${!!m} cookies=[${[...this.jar.cookies.keys()].join(',')}]`);
     }
-    if (!m) throw new Error('Could not read a form token from ' + pagePath);
+    if (!m) {
+      const err = new Error(`Could not read a form token from ${pagePath} (status ${res.status})`);
+      err.transient = true;
+      throw err;
+    }
     this.token = m[1];
     return this.token;
   }
@@ -189,20 +203,28 @@ class RadiusClient {
   // Run a report flow (select centers + read), re-authenticating and re-running
   // the whole flow once if the session/token has gone stale. `prepare` must
   // re-establish any per-session state (e.g. center selection) each attempt.
+  // Report flows are serialized: the session holds one center selection and
+  // one "current report" at a time, and interleaving two flows (or a page
+  // visit) between a report page and its read yields a 403.
   async #runReport(prepare, read) {
-    if (!this.loggedIn) await this.login();
-    try {
-      await prepare();
-      return await read();
-    } catch (e) {
-      if (!e.transient) throw e;
-      this.log.warn?.('[radius] report retry after: ' + e.message);
-      this.token = null;
-      this.loggedIn = false;
-      await this.login();
-      await prepare();
-      return read();
-    }
+    const run = async () => {
+      if (!this.loggedIn) await this.login();
+      try {
+        await prepare();
+        return await read();
+      } catch (e) {
+        if (!e.transient) throw e;
+        this.log.warn?.('[radius] report retry after: ' + e.message);
+        this.token = null;
+        this.loggedIn = false;
+        await this.login();
+        await prepare();
+        return read();
+      }
+    };
+    const result = this.reportChain.then(run, run);
+    this.reportChain = result.catch(() => {});
+    return result;
   }
 
   // Reports honor the "selected centers" stored in the session, so select them
@@ -216,6 +238,49 @@ class RadiusClient {
       body: JSON.stringify({ ctrIds: ids, vcIds: [] }),
     });
     if (process.env.DEBUG_RADIUS) this.log.warn?.(`[radius] selectAllCenters: status=${res.status} ids=${ids.length}`);
+  }
+
+  // Some report grids bind a JSON body and take the antiforgery token as a
+  // header rather than a form field. These reads only succeed straight after
+  // their own report page has been loaded in the session, so the page is
+  // always fetched first (never the cached token).
+  async #postJsonOnce(path, pagePath, payload) {
+    this.token = null;
+    const token = await this.#getToken(pagePath);
+    const res = await this.fetchRaw(path, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'Content-Type': 'application/json; charset=utf-8',
+        Accept: 'application/json',
+        __RequestVerificationToken: token,
+        RequestVerificationToken: token,
+      },
+      body: JSON.stringify({ sort: null, page: 1, pageSize: 20000, group: null, filter: null, ...payload }),
+    });
+    const type = res.headers.get('content-type') || '';
+    if (res.status === 200 && type.includes('json')) return (await res.json()).Data || [];
+    const err = new Error(`Radius returned ${res.status} (${type}) for ${path}`);
+    err.transient = true;
+    throw err;
+  }
+
+  // Every hold on record for the selected centers: StudentId, hold start/end
+  // (StrHoldStartDt / StrHoldEndDt as M/d/yyyy), status. Callers decide
+  // which holds are active today.
+  async getHoldsReport() {
+    const start = new Date(Date.UTC(2015, 0, 1)).toUTCString();
+    const end = new Date(Date.UTC(new Date().getUTCFullYear() + 2, 11, 31)).toUTCString();
+    let ctrIds = [];
+    return this.#runReport(
+      async () => {
+        await this.selectAllCenters();
+        ctrIds = this.centers.map((c) => c.id);
+      },
+      () => this.#postJsonOnce('/Holds/HoldsReport_Read', '/Holds/HoldsReport', {
+        delivery: null, start, end, centerId: null, holdStatus: '', ctrIds,
+      }),
+    );
   }
 
   // Per-student records: name, enrollment status, signup date, school, and the

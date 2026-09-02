@@ -47,9 +47,11 @@ class Poller {
       }
       this.store.mode = this.modeLabel;
       this.consecutiveFailures = 0;
+      this.store.sync = { failures: 0, lastError: null, lastSuccessAt: new Date().toISOString() };
     } catch (e) {
       this.consecutiveFailures += 1;
       this.log.warn?.(`[poller] pass failed (${this.consecutiveFailures}): ${e.message}`);
+      this.store.sync = { ...(this.store.sync || {}), failures: this.consecutiveFailures, lastError: e.message };
       if (this.store.mode !== 'live') this.store.mode = 'error: ' + e.message;
     }
   }

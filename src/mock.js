@@ -97,6 +97,19 @@ class MockRadiusClient {
     }
     const schoolGeo = {};
     schoolNames.forEach((s, i) => { schoolGeo[s] = [clat + (i - 2) * 0.03, clng + (i - 2) * 0.035]; });
+    const mkName = () => `${FIRST[Math.floor(rand() * FIRST.length)]} ${LAST[Math.floor(rand() * LAST.length)]}`;
+    const runningOut = Array.from({ length: 4 + Math.floor(rand() * 5) }, () => {
+      const isPackage = rand() < 0.6;
+      return {
+        name: mkName(), school: schoolNames[Math.floor(rand() * schoolNames.length)],
+        plan: isPackage ? (rand() < 0.5 ? 'Private Sessions Package' : 'Flex Sessions') : 'Monthly Sessions',
+        isPackage, sessionsLeft: Math.floor(rand() * 3), daysSinceVisit: Math.floor(rand() * 9), center: center.name,
+      };
+    }).sort((a, b) => (b.isPackage - a.isPackage) || (a.sessionsLeft - b.sessionsLeft));
+    const holdsList = Array.from({ length: holds }, () => ({
+      name: mkName(), school: schoolNames[Math.floor(rand() * schoolNames.length)],
+      daysOnHold: 3 + Math.floor(rand() * 70), exact: false, center: center.name,
+    })).sort((a, b) => b.daysOnHold - a.daysOnHold);
     return {
       id: center.id,
       name: center.name,
@@ -107,6 +120,8 @@ class MockRadiusClient {
       avgTenureMonths: tenures.reduce((a, b) => a + b, 0) / tenures.length,
       geocodePending: 0,
       belowAverage: belowAverage.sort((a, b) => b.daysSinceVisit - a.daysSinceVisit).slice(0, 20),
+      runningOut,
+      holdsList,
       schools: Object.entries(schoolCount).map(([name, count]) => ({
         name, count, lat: schoolGeo[name][0], lng: schoolGeo[name][1],
       })).sort((a, b) => b.count - a.count),
