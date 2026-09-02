@@ -23,11 +23,16 @@ centers**; use the top filter to focus one center):
   *On hold* (longest holds first, from Radius's Holds report; 30+ days is
   flagged), and *Attendance dropped* (longer since their last visit than the
   center's average). This is the "who do I talk to at pickup" list.
-- **A map of where students come from** - a circle on each school sized by how
-  many of your students attend it, plus neighborhood-density circles by ZIP
-  area. The map uses only **public places** (school and ZIP-area locations);
-  individual student home addresses are never plotted, geocoded, or sent
-  anywhere.
+- **A map of where students come from** - Duolingo-style "path nodes": a red
+  **M** node for each center (its storefront when OpenStreetMap knows it,
+  otherwise its town, drawn dashed), blue school nodes with the student count
+  printed inside (three sizes; the top 3 wear medal rings), and flat yellow
+  neighborhood discs labelled with the ZIP and count. Zoomed out you see only
+  the centers; click an M to zoom into it. The map uses only **public
+  places** (center, school and ZIP-area locations); individual student home
+  addresses are never plotted, geocoded, or sent anywhere. Schools whose name
+  search lands far from the center's students are left off the map (they
+  stay in the leaderboard).
 
 Everything auto-refreshes. The UI follows Duolingo's design language (chunky
 rounded cards, pressable buttons, bold rounded type, a left icon rail that
