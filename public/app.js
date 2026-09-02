@@ -17,7 +17,9 @@
     detail: null,       // per-center detail payload
     map: null,          // Leaflet map instance
     layers: null,       // { schools, zips } layer groups
+    basemap: 'streets', // 'streets' | 'satellite'
   };
+  try { state.basemap = localStorage.getItem('mn-basemap') || 'streets'; } catch (e) { /* private mode */ }
 
   // ---------- tiny DOM helper ----------
   function h(tag, attrs = {}, children = []) {
@@ -472,9 +474,18 @@
     return base + span * Math.sqrt(count / Math.max(max, 1));
   }
 
-  const TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-  const TILE_DARK = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  const TILE_ATTR = '&copy; OpenStreetMap &copy; CARTO';
+  const TILES = {
+    streets: {
+      light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      attr: '&copy; OpenStreetMap &copy; CARTO',
+    },
+    satellite: {
+      imagery: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      labels: 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png',
+      attr: 'Imagery &copy; Esri &middot; Labels &copy; CARTO',
+    },
+  };
 
   function isDarkTheme() {
     const t = document.documentElement.dataset.theme;
@@ -485,8 +496,47 @@
     return v || fallback;
   }
 
-  // On-map key: what each colour means, plus a graduated size scale read off
-  // the data actually on screen.
+  // Radial gradients injected into Leaflet's overlay SVG so markers render as
+  // shaded, dimensional beads rather than flat discs.
+  function ensureGradientDefs() {
+    const svg = (state.renderer && state.renderer._container)
+      || document.querySelector('#map .leaflet-overlay-pane svg');
+    if (!svg || svg.querySelector('#mn-grad-school')) return;
+    const NS = 'http://www.w3.org/2000/svg';
+    const defs = document.createElementNS(NS, 'defs');
+    const grad = (id, cx, cy, r, stops) => {
+      const g = document.createElementNS(NS, 'radialGradient');
+      g.setAttribute('id', id); g.setAttribute('cx', cx); g.setAttribute('cy', cy); g.setAttribute('r', r);
+      for (const [off, col, op] of stops) {
+        const st = document.createElementNS(NS, 'stop');
+        st.setAttribute('offset', off); st.setAttribute('stop-color', col);
+        if (op != null) st.setAttribute('stop-opacity', op);
+        g.appendChild(st);
+      }
+      defs.appendChild(g);
+    };
+    grad('mn-grad-school', '35%', '30%', '72%', [['0%', '#FFA294'], ['40%', '#EF3E33'], ['100%', '#7E0C09']]);
+    grad('mn-grad-zip', '50%', '50%', '50%', [['0%', '#12A9C4', 0.62], ['62%', '#0C90A8', 0.2], ['100%', '#0C90A8', 0.03]]);
+    svg.insertBefore(defs, svg.firstChild);
+  }
+
+  function applyBasemap(dark) {
+    const key = state.basemap + ':' + (dark ? 'dark' : 'light');
+    if (state.tileKey === key) return;
+    for (const l of state.tileLayers || []) state.map.removeLayer(l);
+    const layers = [];
+    if (state.basemap === 'satellite') {
+      layers.push(L.tileLayer(TILES.satellite.imagery, { maxZoom: 18, attribution: TILES.satellite.attr }));
+      layers.push(L.tileLayer(TILES.satellite.labels, { maxZoom: 18 }));
+    } else {
+      layers.push(L.tileLayer(dark ? TILES.streets.dark : TILES.streets.light, { maxZoom: 18, attribution: TILES.streets.attr }));
+    }
+    layers.forEach((l) => l.addTo(state.map));
+    state.tileLayers = layers;
+    state.tileKey = key;
+  }
+
+  // On-map key: colour meaning plus a graduated size scale read off the data.
   function buildMapKey(d) {
     const el = state.mapKeyEl;
     if (!el) return;
@@ -494,7 +544,7 @@
     const steps = [...new Set([1, Math.max(2, Math.round(maxSchool / 2)), maxSchool])]
       .filter((n) => n > 0).sort((a, b) => a - b);
     const sizes = steps.map((n) => {
-      const r = circleRadius(n, maxSchool, 6, 18);
+      const r = circleRadius(n, maxSchool, 7, 22);
       return h('div', { class: 'key-size' }, [
         h('i', { style: `width:${Math.round(r * 2)}px;height:${Math.round(r * 2)}px` }),
         h('span', { text: String(n) }),
@@ -511,28 +561,26 @@
 
   function renderMap(d) {
     if (typeof L === 'undefined') {
-      // Leaflet may still be loading; retry briefly, then show a fallback note.
       state.mapRetries = (state.mapRetries || 0) + 1;
       if (state.mapRetries <= 20) { setTimeout(() => renderMap(d), 400); return; }
       const el = $('#map');
       if (el && !el.dataset.failed) {
         el.dataset.failed = '1';
-        el.style.display = 'flex';
-        el.style.alignItems = 'center';
-        el.style.justifyContent = 'center';
-        el.style.padding = '20px';
+        el.style.display = 'flex'; el.style.alignItems = 'center'; el.style.justifyContent = 'center'; el.style.padding = '20px';
         el.textContent = 'Map library could not load. The school and neighborhood counts are in the tables.';
       }
       return;
     }
 
-    const s1 = cssVar('--series-1', '#D62E22');
     const s2 = cssVar('--series-2', '#0C90A8');
     const surface = cssVar('--surface', '#ffffff');
     const dark = isDarkTheme();
 
     if (!state.map) {
-      state.map = L.map('map', { scrollWheelZoom: false });
+      // an initial view makes the map 'loaded' so layers (and the SVG renderer) attach synchronously
+      state.map = L.map('map', { scrollWheelZoom: false, center: [39.5, -98.35], zoom: 4 });
+      state.renderer = L.svg({ padding: 0.5 }).addTo(state.map);
+      ensureGradientDefs();
       state.layers = { schools: L.layerGroup(), zips: L.layerGroup() };
       L.control.scale({ imperial: true, metric: false, position: 'bottomleft' }).addTo(state.map);
       const key = L.control({ position: 'bottomright' });
@@ -545,55 +593,48 @@
       key.addTo(state.map);
     }
 
-    // muted basemap so the data reads clearly; follows the theme
-    const mode = dark ? 'dark' : 'light';
-    if (state.tileMode !== mode) {
-      if (state.tiles) state.map.removeLayer(state.tiles);
-      state.tiles = L.tileLayer(dark ? TILE_DARK : TILE_LIGHT, {
-        maxZoom: 18, attribution: TILE_ATTR,
-      }).addTo(state.map);
-      state.tileMode = mode;
-    }
-
+    applyBasemap(dark);
     state.map.invalidateSize();
     state.layers.schools.clearLayers();
     state.layers.zips.clearLayers();
 
     const pts = [];
 
-    // Neighborhoods: soft dashed teal, drawn first so schools sit on top.
+    // Neighborhoods: soft teal domes with a dashed edge, drawn beneath.
     const maxZip = Math.max(1, ...(d.zips || []).map((z) => z.count));
     for (const z of d.zips || []) {
       if (z.lat == null || z.lng == null) continue;
       pts.push([z.lat, z.lng]);
       L.circleMarker([z.lat, z.lng], {
-        radius: circleRadius(z.count, maxZip, 10, 30),
-        color: s2, weight: 1.5, dashArray: '4 3',
-        fillColor: s2, fillOpacity: 0.16,
+        radius: circleRadius(z.count, maxZip, 12, 34), className: 'mn-zip', renderer: state.renderer,
+        color: s2, weight: 1.5, dashArray: '4 3', opacity: 0.9,
+        fillColor: 'url(#mn-grad-zip)', fillOpacity: 1,
       }).bindTooltip(
         `<b>ZIP ${escapeHtml(z.zip)}</b><br>${z.count} student${z.count === 1 ? '' : 's'} live near here`,
         { direction: 'top', sticky: true },
       ).addTo(state.layers.zips);
     }
 
-    // Schools: solid brand-red dots with a surface ring so they stay crisp.
+    // Schools: shaded red beads with a surface ring and a drop shadow.
     const maxSchool = Math.max(1, ...(d.schools || []).map((s) => s.count));
     for (const s of d.schools || []) {
       if (s.lat == null || s.lng == null) continue;
       pts.push([s.lat, s.lng]);
       L.circleMarker([s.lat, s.lng], {
-        radius: circleRadius(s.count, maxSchool, 6, 18),
-        color: surface, weight: 2,
-        fillColor: s1, fillOpacity: 0.9,
+        radius: circleRadius(s.count, maxSchool, 7, 22), className: 'mn-school', renderer: state.renderer,
+        color: surface, weight: 2.5, opacity: 1,
+        fillColor: 'url(#mn-grad-school)', fillOpacity: 1,
       }).bindTooltip(
         `<b>${escapeHtml(s.name)}</b><br>${s.count} student${s.count === 1 ? '' : 's'}`,
         { direction: 'top', sticky: true },
       ).addTo(state.layers.schools);
     }
 
+    applyMapToggles();      // adds the layer groups (creates the SVG renderer)
+    ensureGradientDefs();   // now the SVG exists - install the gradients
     buildMapKey(d);
-    applyMapToggles();
-    if (pts.length) state.map.fitBounds(pts, { padding: [34, 34], maxZoom: 13 });
+    if (pts.length) state.map.fitBounds(pts, { padding: [36, 36], maxZoom: 13 });
+    ensureGradientDefs(); // belt-and-braces: renderer container exists for sure now
   }
 
   function applyMapToggles() {
@@ -636,6 +677,14 @@
   $('#rosterSearch').addEventListener('input', (e) => { state.search = e.target.value; renderRoster(); });
   $('#tglSchools').addEventListener('change', applyMapToggles);
   $('#tglZips').addEventListener('change', applyMapToggles);
+  const segBtns = document.querySelectorAll('.seg-btn[data-base]');
+  segBtns.forEach((b) => b.classList.toggle('active', b.dataset.base === state.basemap));
+  segBtns.forEach((b) => b.addEventListener('click', () => {
+    state.basemap = b.dataset.base;
+    segBtns.forEach((x) => x.classList.toggle('active', x === b));
+    try { localStorage.setItem('mn-basemap', state.basemap); } catch (e) { /* private mode */ }
+    if (state.detail) renderMap(state.detail);
+  }));
 
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.table-toggle');

@@ -10,35 +10,39 @@
 <script defer src="vendor/leaflet/leaflet.js"></script>
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">
-    <span class="brand-mark">M</span>
-    <h1>Mathnasium Live</h1>
-    <span id="modeBadge" class="badge" hidden></span>
+<header class="masthead">
+  <div class="masthead-top">
+    <div class="brand">
+      <span class="brand-mark">M</span>
+      <div>
+        <h1>Mathnasium Live</h1>
+        <div class="brand-sub">Center operations dashboard</div>
+      </div>
+      <span id="modeBadge" class="badge" hidden></span>
+    </div>
+    <div class="topbar-right">
+      <span id="lastSync" class="muted"></span>
+      <button id="themeToggle" class="ghost-btn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+    </div>
   </div>
-  <div class="topbar-right">
-    <span id="lastSync" class="muted"></span>
-    <button id="themeToggle" class="ghost-btn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+  <div class="masthead-filters" role="group" aria-label="Filters">
+    <label class="filter">
+      <span>Center</span>
+      <select id="centerFilter"><option value="">All centers</option></select>
+    </label>
+    <label class="filter">
+      <span>Trend range</span>
+      <select id="rangeFilter">
+        <option value="7">Last 7 days</option>
+        <option value="14">Last 14 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
+    </label>
   </div>
 </header>
 
 <div id="configNote" class="config-note" hidden></div>
-
-<div class="filters" role="group" aria-label="Filters">
-  <label class="filter">
-    <span>Center</span>
-    <select id="centerFilter"><option value="">All centers</option></select>
-  </label>
-  <label class="filter">
-    <span>Trend range</span>
-    <select id="rangeFilter">
-      <option value="7">Last 7 days</option>
-      <option value="14">Last 14 days</option>
-      <option value="30" selected>Last 30 days</option>
-      <option value="90">Last 90 days</option>
-    </select>
-  </label>
-</div>
 
 <main id="main" class="content">
   <section id="centerDetail" aria-label="Center overview">
@@ -51,9 +55,15 @@
       <figure class="card map-card">
         <figcaption>
           <h2 id="mapTitle">Where students come from</h2>
-          <div class="map-toggles">
-            <label><input type="checkbox" id="tglSchools" checked> Schools</label>
-            <label><input type="checkbox" id="tglZips" checked> Neighborhoods</label>
+          <div class="map-tools">
+            <div class="seg" role="group" aria-label="Basemap">
+              <button type="button" class="seg-btn active" data-base="streets">Streets</button>
+              <button type="button" class="seg-btn" data-base="satellite">Satellite</button>
+            </div>
+            <div class="map-toggles">
+              <label><input type="checkbox" id="tglSchools" checked> Schools</label>
+              <label><input type="checkbox" id="tglZips" checked> Neighborhoods</label>
+            </div>
           </div>
         </figcaption>
         <div id="map"></div>
