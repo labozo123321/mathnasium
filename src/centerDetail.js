@@ -48,12 +48,14 @@ function placesForCenter(schoolRows, center) {
   const st = stateFor(center.name);
   const mem = members(schoolRows, center);
   const schoolCity = {}; // school -> {town: count}
+  const towns = {};      // town -> members (the center's own town, most likely)
   const zipSet = new Set();
   for (const r of mem) {
     const school = (r.SchoolName || '').trim();
+    const town = (r.City || '').trim();
+    if (town) towns[town] = (towns[town] || 0) + 1;
     if (school) {
       schoolCity[school] = schoolCity[school] || {};
-      const town = (r.City || '').trim();
       if (town) schoolCity[school][town] = (schoolCity[school][town] || 0) + 1;
     }
     const zip = String(r.ZipCode || '').trim().slice(0, 5);
@@ -61,7 +63,7 @@ function placesForCenter(schoolRows, center) {
   }
   const schools = Object.keys(schoolCity).map((name) => ({ name, city: modal(schoolCity[name]) || '', state: st }));
   const zips = [...zipSet].map((zip) => ({ zip, state: st }));
-  return { schools, zips };
+  return { schools, zips, hint: { city: modal(towns) || '', state: st } };
 }
 
 // geo = { schools: Map<name,{lat,lng}>, zips: Map<zip,{lat,lng}> }

@@ -346,39 +346,68 @@ figure.card figcaption h2 { font-size: 16px; font-weight: 900; letter-spacing: -
   background: var(--surface-2); border: 2px solid var(--border);
 }
 
-/* dimensional markers (classes set by the renderer) */
-.mn-school {
-  filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.28)) drop-shadow(0 8px 10px rgba(0, 0, 0, 0.22));
-  transition: filter .12s;
+/* Duolingo-style map nodes (Leaflet divIcons) */
+.mn-node-icon { background: none; border: 0; display: flex; align-items: center; justify-content: center; overflow: visible; }
+.node {
+  --node-shade: var(--blue-shade);
+  display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; box-sizing: border-box;
+  font-family: "Nunito", "Segoe UI", system-ui, sans-serif; font-weight: 900; color: #fff; letter-spacing: -0.02em;
+  border: 3px solid #fff; box-shadow: 0 4px 0 var(--node-shade); cursor: pointer; transition: transform .08s;
+  font-variant-numeric: tabular-nums; line-height: 1;
 }
-.mn-school:hover { filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.32)) drop-shadow(0 12px 16px rgba(0, 0, 0, 0.3)) brightness(1.06); }
-.mn-zip { filter: drop-shadow(0 2px 8px rgba(28, 176, 246, 0.35)); }
+.node-school { background: var(--blue); --node-shade: var(--blue-shade); }
+.node.sz-s { width: 30px; height: 30px; font-size: 12px; }
+.node.sz-m { width: 40px; height: 40px; font-size: 15px; }
+.node.sz-l { width: 52px; height: 52px; font-size: 19px; }
+.node-home {
+  width: 56px; height: 56px; font-size: 27px; background: var(--brand); --node-shade: var(--brand-shade);
+  box-shadow: 0 4px 0 var(--brand-shade), 0 0 0 4px var(--yellow);
+}
+.node-home.approx { border-style: dashed; }
+.node-badge {
+  position: absolute; top: -9px; right: -12px; font-style: normal; font-size: 11px; line-height: 1;
+  background: var(--yellow); color: #5A4300; border: 2px solid #fff; border-radius: 999px; padding: 3px 6px;
+  box-shadow: 0 2px 0 var(--yellow-shade); font-variant-numeric: tabular-nums;
+}
+.node { position: relative; }
+/* zoomed out: centers only; zoom in to see schools and neighborhoods */
+#map.mn-far .leaflet-marker-pane .node-school, #map.mn-far .leaflet-marker-pane .zip-pill { display: none; }
+#map.mn-far .leaflet-overlay-pane { opacity: 0; }
+#map.mn-far .node-home { cursor: zoom-in; }
+.map-key .key-hint { display: none; margin-top: 8px; padding-top: 8px; border-top: 2px solid var(--grid-line); color: var(--blue-ink); font-weight: 900; }
+#map.mn-far .map-key .key-hint { display: block; }
+.node.rank-1 { box-shadow: 0 4px 0 var(--node-shade), 0 0 0 4px #FFC800; }
+.node.rank-2 { box-shadow: 0 4px 0 var(--node-shade), 0 0 0 4px #C4CCD3; }
+.node.rank-3 { box-shadow: 0 4px 0 var(--node-shade), 0 0 0 4px #E7A56B; }
+.leaflet-marker-icon:hover .node { transform: translateY(-2px); }
+.zip-pill {
+  display: inline-block; white-space: nowrap; transform: translate(-50%, 0);
+  background: var(--surface); color: var(--text-primary); border: 2px solid var(--yellow-shade);
+  border-radius: 999px; padding: 2px 8px; font: 900 11px/1.3 "Nunito", "Segoe UI", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums; box-shadow: 0 2px 0 var(--yellow-shade);
+}
 
 /* on-map key */
 .map-key {
   background: var(--surface); border: 2px solid var(--border); border-bottom-width: 4px; border-radius: 14px;
-  padding: 11px 13px; font-size: 12px; color: var(--text-secondary); line-height: 1.35; min-width: 172px;
+  padding: 11px 13px; font-size: 12px; color: var(--text-secondary); line-height: 1.35; min-width: 190px; max-width: 230px;
   font-family: inherit; font-weight: 800;
 }
 .map-key .key-title { font-size: 10px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
-.map-key .key-row { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; color: var(--text-primary); }
-.map-key .key-swatch { width: 15px; height: 15px; border-radius: 50%; flex: none; }
-.map-key .key-swatch.school {
-  background: radial-gradient(circle at 35% 30%, #FFA294 0%, #EF3E33 45%, #7E0C09 100%);
-  border: 2px solid var(--surface); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+.map-key .key-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--text-primary); }
+.map-key .key-node { cursor: default; flex: none; }
+.map-key .key-node.node-home { width: 30px; height: 30px; font-size: 14px; box-shadow: 0 3px 0 var(--brand-shade), 0 0 0 3px var(--yellow); }
+.map-key .key-node.sz-s { width: 24px; height: 24px; font-size: 10px; box-shadow: 0 3px 0 var(--node-shade); }
+.map-key .key-node.sz-m { width: 30px; height: 30px; font-size: 11px; box-shadow: 0 3px 0 var(--node-shade); }
+.map-key .key-node.sz-l { width: 36px; height: 36px; font-size: 12px; box-shadow: 0 3px 0 var(--node-shade); }
+.map-key .key-node.rank-1 { box-shadow: 0 3px 0 var(--node-shade), 0 0 0 3px #FFC800; }
+.map-key .key-disc {
+  width: 24px; height: 24px; border-radius: 50%; flex: none;
+  background: color-mix(in srgb, var(--yellow) 30%, transparent); border: 2.5px solid var(--yellow-shade);
 }
-.map-key .key-swatch.zip {
-  background: radial-gradient(circle, rgba(28, 176, 246, 0.6) 0%, rgba(28, 176, 246, 0.18) 70%, rgba(28, 176, 246, 0.03) 100%);
-  border: 2px dashed var(--series-2);
-}
-.map-key .key-sizes { display: flex; align-items: flex-end; gap: 12px; margin-top: 10px; padding-top: 10px; border-top: 2px solid var(--grid-line); }
-.map-key .key-size { display: flex; flex-direction: column; align-items: center; gap: 5px; }
-.map-key .key-size i {
-  display: block; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #FFA294 0%, #EF3E33 45%, #7E0C09 100%);
-  border: 2px solid var(--surface); box-shadow: 0 3px 6px rgba(0, 0, 0, 0.32);
-}
-.map-key .key-size span { font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; font-weight: 900; }
+.map-key .key-sizes { display: flex; align-items: flex-end; gap: 12px; margin: 4px 0 10px; padding: 10px 0; border-top: 2px solid var(--grid-line); border-bottom: 2px solid var(--grid-line); }
+.map-key .key-size { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.map-key .key-size span:last-child { font-size: 10px; color: var(--text-muted); font-variant-numeric: tabular-nums; font-weight: 900; }
 
 .leaflet-container { font: 700 13px "Nunito", "Segoe UI", system-ui, sans-serif; border-radius: 12px; }
 .leaflet-popup-content-wrapper, .leaflet-tooltip {

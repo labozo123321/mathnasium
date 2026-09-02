@@ -128,6 +128,7 @@ class MockRadiusClient {
       zips: Object.entries(zipCount).map(([zip, count]) => ({
         zip, count, lat: zipGeo[zip][0], lng: zipGeo[zip][1],
       })).sort((a, b) => b.count - a.count),
+      centerPins: [{ id: center.id, name: center.name, lat: clat, lng: clng, approx: false, members: nMembers }],
     };
   }
 

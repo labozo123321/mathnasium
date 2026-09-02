@@ -496,13 +496,21 @@
     renderMap(d);
   }
 
-  function circleRadius(count, max, base, span) {
-    return base + span * Math.sqrt(count / Math.max(max, 1));
+  // Three readable size steps instead of a continuous radius.
+  function sizeSteps(max) {
+    const m = Math.max(2, Math.ceil(max * 0.25));
+    const l = Math.max(m + 1, Math.ceil(max * 0.6));
+    return { m, l };
   }
+  function sizeClass(count, steps) {
+    return count >= steps.l ? 'sz-l' : count >= steps.m ? 'sz-m' : 'sz-s';
+  }
+  const NODE_PX = { 'sz-s': 30, 'sz-m': 40, 'sz-l': 52 };
+  const DISC_PX = { 'sz-s': 20, 'sz-m': 28, 'sz-l': 38 };
 
   const TILES = {
     streets: {
-      light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+      light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
       dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
       attr: '&copy; OpenStreetMap &copy; CARTO',
     },
@@ -522,28 +530,36 @@
     return v || fallback;
   }
 
-  // Radial gradients injected into Leaflet's overlay SVG so markers render as
-  // shaded, dimensional beads rather than flat discs.
-  function ensureGradientDefs() {
-    const svg = (state.renderer && state.renderer._container)
-      || document.querySelector('#map .leaflet-overlay-pane svg');
-    if (!svg || svg.querySelector('#mn-grad-school')) return;
-    const NS = 'http://www.w3.org/2000/svg';
-    const defs = document.createElementNS(NS, 'defs');
-    const grad = (id, cx, cy, r, stops) => {
-      const g = document.createElementNS(NS, 'radialGradient');
-      g.setAttribute('id', id); g.setAttribute('cx', cx); g.setAttribute('cy', cy); g.setAttribute('r', r);
-      for (const [off, col, op] of stops) {
-        const st = document.createElementNS(NS, 'stop');
-        st.setAttribute('offset', off); st.setAttribute('stop-color', col);
-        if (op != null) st.setAttribute('stop-opacity', op);
-        g.appendChild(st);
-      }
-      defs.appendChild(g);
-    };
-    grad('mn-grad-school', '35%', '30%', '72%', [['0%', '#FFA294'], ['40%', '#EF3E33'], ['100%', '#7E0C09']]);
-    grad('mn-grad-zip', '50%', '50%', '50%', [['0%', '#1CB0F6', 0.62], ['62%', '#1899D6', 0.2], ['100%', '#1899D6', 0.03]]);
-    svg.insertBefore(defs, svg.firstChild);
+  // Flat Duolingo-style "path node": a chunky circle with a thick bottom edge.
+  // Only numbers / fixed strings go into the HTML; names travel via tooltips.
+  function nodeIcon(classes, label, px, badge) {
+    const div = document.createElement('div');
+    div.className = 'node ' + classes;
+    const span = document.createElement('span');
+    span.textContent = String(label);
+    div.appendChild(span);
+    if (badge != null) {
+      const em = document.createElement('em');
+      em.className = 'node-badge';
+      em.textContent = String(Number(badge));
+      div.appendChild(em);
+    }
+    return L.divIcon({ className: 'mn-node-icon', html: div.outerHTML, iconSize: [px, px], iconAnchor: [px / 2, px / 2] });
+  }
+  // A label pill whose top sits on the bottom edge of a disc of radius r.
+  function pillIcon(text, r) {
+    const div = document.createElement('div');
+    div.className = 'zip-pill';
+    div.textContent = text;
+    return L.divIcon({ className: 'mn-node-icon', html: div.outerHTML, iconSize: [0, 0], iconAnchor: [0, -(r - 6)] });
+  }
+
+  // Zoomed out (all centers, country scale) only the center nodes are shown;
+  // schools and neighborhoods appear once you zoom in - like opening a unit.
+  const FAR_ZOOM = 9;
+  function applyZoomVisibility() {
+    if (!state.map) return;
+    $('#map').classList.toggle('mn-far', state.map.getZoom() < FAR_ZOOM);
   }
 
   function applyBasemap(dark) {
@@ -562,26 +578,27 @@
     state.tileKey = key;
   }
 
-  // On-map key: colour meaning plus a graduated size scale read off the data.
-  function buildMapKey(d) {
+  // On-map key: what each node means, the three sizes, and the medal rings.
+  function buildMapKey(d, steps) {
     const el = state.mapKeyEl;
     if (!el) return;
-    const maxSchool = Math.max(1, ...(d.schools || []).map((s) => s.count));
-    const steps = [...new Set([1, Math.max(2, Math.round(maxSchool / 2)), maxSchool])]
-      .filter((n) => n > 0).sort((a, b) => a - b);
-    const sizes = steps.map((n) => {
-      const r = circleRadius(n, maxSchool, 7, 22);
-      return h('div', { class: 'key-size' }, [
-        h('i', { style: `width:${Math.round(r * 2)}px;height:${Math.round(r * 2)}px` }),
-        h('span', { text: String(n) }),
-      ]);
-    });
+    const node = (cls, label) => {
+      const n = h('span', { class: 'node key-node ' + cls }, h('span', { text: label }));
+      return n;
+    };
+    const row = (swatch, text) => h('div', { class: 'key-row' }, [swatch, h('span', { text })]);
     el.replaceChildren(
       h('div', { class: 'key-title', text: 'Map key' }),
-      h('div', { class: 'key-row' }, [h('span', { class: 'key-swatch school' }), h('span', { text: 'School' })]),
-      h('div', { class: 'key-row' }, [h('span', { class: 'key-swatch zip' }), h('span', { text: 'Neighborhood (ZIP)' })]),
-      h('div', { class: 'key-sizes' }, sizes),
-      h('div', { class: 'key-title', style: 'margin:8px 0 0', text: 'circle size = students' }),
+      row(node('node-home sz-s', 'M'), 'Mathnasium center'),
+      row(node('node-school sz-s', '7'), 'School · number = students'),
+      row(h('span', { class: 'key-disc' }), 'Neighborhood (ZIP) · students'),
+      h('div', { class: 'key-sizes' }, [
+        h('div', { class: 'key-size' }, [node('node-school sz-s', ''), h('span', { text: `1–${steps.m - 1}` })]),
+        h('div', { class: 'key-size' }, [node('node-school sz-m', ''), h('span', { text: `${steps.m}–${steps.l - 1}` })]),
+        h('div', { class: 'key-size' }, [node('node-school sz-l', ''), h('span', { text: `${steps.l}+` })]),
+      ]),
+      row(node('node-school sz-s rank-1', '1'), 'Top 3 schools wear a medal ring'),
+      h('div', { class: 'key-hint', text: 'Zoom in or click an M to see its schools' }),
     );
   }
 
@@ -598,16 +615,13 @@
       return;
     }
 
-    const s2 = cssVar('--series-2', '#1899D6');
-    const surface = cssVar('--surface', '#ffffff');
     const dark = isDarkTheme();
+    const yellow = cssVar('--yellow', '#FFC800');
+    const yellowShade = cssVar('--yellow-shade', '#E5A800');
 
     if (!state.map) {
-      // an initial view makes the map 'loaded' so layers (and the SVG renderer) attach synchronously
       state.map = L.map('map', { scrollWheelZoom: false, center: [39.5, -98.35], zoom: 4 });
-      state.renderer = L.svg({ padding: 0.5 }).addTo(state.map);
-      ensureGradientDefs();
-      state.layers = { schools: L.layerGroup(), zips: L.layerGroup() };
+      state.layers = { zips: L.layerGroup(), schools: L.layerGroup(), centers: L.layerGroup() };
       L.control.scale({ imperial: true, metric: false, position: 'bottomleft' }).addTo(state.map);
       const key = L.control({ position: 'bottomright' });
       key.onAdd = () => {
@@ -617,58 +631,80 @@
         return el;
       };
       key.addTo(state.map);
+      state.map.on('zoomend', applyZoomVisibility);
     }
 
     applyBasemap(dark);
     state.map.invalidateSize();
     state.layers.schools.clearLayers();
     state.layers.zips.clearLayers();
+    state.layers.centers.clearLayers();
 
     const pts = [];
+    const total = Math.max(1, d.memberCount || 0);
 
-    // Neighborhoods: soft teal domes with a dashed edge, drawn beneath.
-    const maxZip = Math.max(1, ...(d.zips || []).map((z) => z.count));
-    for (const z of d.zips || []) {
-      if (z.lat == null || z.lng == null) continue;
+    // Neighborhoods: flat yellow discs with a solid edge and a ZIP · count pill.
+    const zipList = (d.zips || []).filter((z) => z.lat != null && z.lng != null);
+    const zipSteps = sizeSteps(Math.max(1, ...zipList.map((z) => z.count)));
+    for (const z of zipList) {
       pts.push([z.lat, z.lng]);
+      const sz = sizeClass(z.count, zipSteps);
       L.circleMarker([z.lat, z.lng], {
-        radius: circleRadius(z.count, maxZip, 12, 34), className: 'mn-zip', renderer: state.renderer,
-        color: s2, weight: 1.5, dashArray: '4 3', opacity: 0.9,
-        fillColor: 'url(#mn-grad-zip)', fillOpacity: 1,
+        radius: DISC_PX[sz], color: yellowShade, weight: 2.5, opacity: 0.95,
+        fillColor: yellow, fillOpacity: dark ? 0.3 : 0.28,
       }).bindTooltip(
         `<b>ZIP ${escapeHtml(z.zip)}</b><br>${z.count} student${z.count === 1 ? '' : 's'} live near here`,
         { direction: 'top', sticky: true },
       ).addTo(state.layers.zips);
+      L.marker([z.lat, z.lng], {
+        icon: pillIcon(`${String(z.zip).replace(/\D/g, '')} · ${z.count}`, DISC_PX[sz]), interactive: false, zIndexOffset: 0,
+      }).addTo(state.layers.zips);
     }
 
-    // Schools: shaded red beads with a surface ring and a drop shadow.
-    const maxSchool = Math.max(1, ...(d.schools || []).map((s) => s.count));
-    for (const s of d.schools || []) {
-      if (s.lat == null || s.lng == null) continue;
+    // Schools: blue path nodes with the count inside; top 3 wear medal rings.
+    const schoolList = (d.schools || []).filter((s) => s.lat != null && s.lng != null);
+    const ranked = (d.schools || []).slice().sort((a, b) => b.count - a.count).slice(0, 3).map((s) => s.name);
+    const steps = sizeSteps(Math.max(1, ...schoolList.map((s) => s.count)));
+    for (const s of schoolList) {
       pts.push([s.lat, s.lng]);
-      L.circleMarker([s.lat, s.lng], {
-        radius: circleRadius(s.count, maxSchool, 7, 22), className: 'mn-school', renderer: state.renderer,
-        color: surface, weight: 2.5, opacity: 1,
-        fillColor: 'url(#mn-grad-school)', fillOpacity: 1,
-      }).bindTooltip(
-        `<b>${escapeHtml(s.name)}</b><br>${s.count} student${s.count === 1 ? '' : 's'}`,
-        { direction: 'top', sticky: true },
-      ).addTo(state.layers.schools);
+      const sz = sizeClass(s.count, steps);
+      const rank = ranked.indexOf(s.name);
+      const share = Math.round((s.count / total) * 100);
+      L.marker([s.lat, s.lng], {
+        icon: nodeIcon('node-school ' + sz + (rank >= 0 ? ' rank-' + (rank + 1) : ''), s.count, NODE_PX[sz]),
+        zIndexOffset: 100 + s.count, riseOnHover: true,
+      }).bindTooltip(`<b>${escapeHtml(s.name)}</b><br>${s.count} student${s.count === 1 ? '' : 's'}`, { direction: 'top' })
+        .bindPopup(`<b>${escapeHtml(s.name)}</b><br>${s.count} student${s.count === 1 ? '' : 's'} · ${share}% of this scope${rank >= 0 ? `<br>#${rank + 1} school` : ''}`)
+        .addTo(state.layers.schools);
     }
 
-    applyMapToggles();      // adds the layer groups (creates the SVG renderer)
-    ensureGradientDefs();   // now the SVG exists - install the gradients
-    buildMapKey(d);
-    if (pts.length) state.map.fitBounds(pts, { padding: [36, 36], maxZoom: 13 });
-    ensureGradientDefs(); // belt-and-braces: renderer container exists for sure now
+    // The centers themselves: red "M" home nodes.
+    for (const c of d.centerPins || []) {
+      if (c.lat == null || c.lng == null) continue;
+      pts.push([c.lat, c.lng]);
+      const m = L.marker([c.lat, c.lng], {
+        icon: nodeIcon('node-home' + (c.approx ? ' approx' : ''), 'M', 56, c.members), zIndexOffset: 1000, riseOnHover: true,
+      }).bindTooltip(
+        `<b>Mathnasium ${escapeHtml(c.name)}</b><br>${c.members != null ? c.members + ' students · ' : ''}click to zoom in${c.approx ? '<br>approximate location' : ''}`,
+        { direction: 'top' },
+      );
+      m.on('click', () => state.map.flyTo([c.lat, c.lng], Math.max(state.map.getZoom(), 12), { duration: 0.8 }));
+      m.addTo(state.layers.centers);
+    }
+
+    applyMapToggles();
+    buildMapKey(d, steps);
+    if (pts.length) state.map.fitBounds(pts, { padding: [40, 40], maxZoom: 13 });
+    applyZoomVisibility();
   }
 
   function applyMapToggles() {
     if (!state.map || !state.layers) return;
     const wantS = $('#tglSchools').checked;
     const wantZ = $('#tglZips').checked;
-    toggleLayer(state.layers.zips, wantZ);   // draw density under schools
+    toggleLayer(state.layers.zips, wantZ);   // discs under the nodes
     toggleLayer(state.layers.schools, wantS);
+    toggleLayer(state.layers.centers, true);
   }
   function toggleLayer(layer, want) {
     const on = state.map.hasLayer(layer);

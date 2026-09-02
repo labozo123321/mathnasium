@@ -62,7 +62,7 @@ async function saveCache(obj) {
 
 async function lookupSchool(name, city, state) {
   const q = [name, city, state].filter(Boolean).join(', ');
-  const url = `${NOMINATIM}?format=json&limit=1&q=${encodeURIComponent(q)}`;
+  const url = `${NOMINATIM}?format=json&limit=1&countrycodes=us&q=${encodeURIComponent(q)}`;
   const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
   if (!res.ok) throw new Error('nominatim ' + res.status);
   const arr = await res.json();
@@ -120,4 +120,75 @@ async function geocodePlaces(schools, zips) {
   return { schools: outSchools, zips: outZips, remaining };
 }
 
-module.exports = { geocodePlaces };
+// --- Center locations (public business addresses) ---------------------------
+// A Mathnasium center is a public business, so it is looked up by name on
+// Nominatim. The hit is sanity-checked against where the center's students
+// are (their schools/ZIP centroid): a result more than ~60 km away is
+// rejected in favour of the center's town, and failing that the centroid.
+const MAX_CENTER_LOOKUPS_PER_CALL = 4;
+const MAX_KM_FROM_STUDENTS = 60;
+
+function kmBetween(a, b) {
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b[0] - a[0]);
+  const dLng = rad(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+}
+
+async function nominatim(q, limit = 3, attempt = 0) {
+  const url = `${NOMINATIM}?format=json&limit=${limit}&countrycodes=us&q=${encodeURIComponent(q)}`;
+  const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
+  if (res.status === 429 && attempt < 2) { await sleep(3000 * (attempt + 1)); return nominatim(q, limit, attempt + 1); }
+  if (!res.ok) throw new Error('nominatim ' + res.status);
+  const arr = await res.json();
+  return Array.isArray(arr) ? arr : [];
+}
+
+// list: [{ id, name, city, state, anchor: [lat,lng] | null }]
+// Returns { centers: Map<id,{lat,lng,approx}>, remaining }
+async function geocodeCenters(list) {
+  const cache = await loadCache();
+  const out = new Map();
+  let budget = MAX_CENTER_LOOKUPS_PER_CALL;
+  let dirty = false;
+  let remaining = 0;
+  const near = (pt, anchor) => !anchor || kmBetween(pt, anchor) <= MAX_KM_FROM_STUDENTS;
+
+  for (const c of list) {
+    const key = `center|${(c.name || '').toLowerCase()}|${(c.state || '').toLowerCase()}`;
+    const hit = cache[key];
+    if (hit && near([hit[0], hit[1]], c.anchor)) { out.set(c.id, { lat: hit[0], lng: hit[1], approx: hit[2] !== 'business' }); continue; }
+    if (budget <= 0) {
+      remaining++;
+      if (c.anchor) out.set(c.id, { lat: c.anchor[0], lng: c.anchor[1], approx: true });
+      continue;
+    }
+    let found = null;
+    try {
+      budget--;
+      const hits = await nominatim(`Mathnasium ${c.name}, ${c.state || ''}`);
+      const biz = hits.find((r) => /mathnasium/i.test(r.display_name || '') && near([Number(r.lat), Number(r.lon)], c.anchor));
+      if (biz) found = [Number(biz.lat), Number(biz.lon), 'business'];
+      await sleep(1100);
+      if (!found && c.city && budget > 0) {
+        budget--;
+        const towns = await nominatim(`${c.city}, ${c.state || ''}`, 1);
+        const t = towns[0];
+        if (t && near([Number(t.lat), Number(t.lon)], c.anchor)) found = [Number(t.lat), Number(t.lon), 'city'];
+        await sleep(1100);
+      }
+    } catch (e) {
+      remaining++; // a rate-limit or network hiccup: the page polls again shortly
+      if (process.env.DEBUG_GEO) console.warn('[geo] center lookup failed for', c.name, e.message);
+    }
+    if (process.env.DEBUG_GEO) console.warn('[geo] center', c.name, 'anchor', c.anchor, '->', found);
+    if (found) { cache[key] = found; dirty = true; out.set(c.id, { lat: found[0], lng: found[1], approx: found[2] !== 'business' }); }
+    else if (c.anchor) out.set(c.id, { lat: c.anchor[0], lng: c.anchor[1], approx: true });
+  }
+
+  if (dirty) await saveCache(cache);
+  return { centers: out, remaining };
+}
+
+module.exports = { geocodePlaces, geocodeCenters, kmBetween };
