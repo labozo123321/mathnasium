@@ -427,3 +427,35 @@ section > h2 { margin-bottom: 12px; }
 .tooltip .key { display: inline-block; width: 11px; height: 3px; border-radius: 2px; background: var(--series-1); vertical-align: middle; margin-right: 6px; }
 
 .foot { padding: 0 26px 36px; text-align: center; }
+
+/* ================= needs-attention queue ================= */
+.queue-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.queue-tab {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary);
+  border-radius: 999px; padding: 5px 11px 5px 12px; font: inherit; font-size: 12px; font-weight: 700;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.queue-tab:hover { border-color: var(--brand-line); }
+.queue-tab .count {
+  min-width: 20px; padding: 1px 6px; border-radius: 999px; text-align: center;
+  background: var(--border); color: var(--text-primary); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.queue-tab.active { background: var(--mn-red); border-color: var(--mn-red-deep); color: #fff; }
+.queue-tab.active .count { background: var(--mn-yellow); color: var(--mn-black); }
+.queue-tab:focus-visible { outline: 3px solid var(--mn-yellow); outline-offset: 1px; }
+.data-table td.flag { color: var(--mn-red-deep); font-weight: 800; }
+.pill {
+  display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--mn-yellow) 45%, var(--surface)); color: var(--mn-black);
+  font-size: 10px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px;
+}
+
+/* ================= alert bar ================= */
+.alert-bar { max-width: 1440px; margin: 16px auto 0; width: calc(100% - 52px); display: grid; gap: 8px; }
+.alert { padding: 11px 15px; border-radius: 10px; font-size: 13px; font-weight: 600; border: 1px solid; }
+.alert.warn {
+  background: color-mix(in srgb, var(--mn-yellow) 26%, var(--surface));
+  border-color: color-mix(in srgb, var(--mn-yellow) 75%, transparent); color: var(--text-primary);
+}
+.alert.bad { background: var(--mn-red); border-color: var(--mn-red-deep); color: #fff; }

@@ -18,6 +18,11 @@ centers**; use the top filter to focus one center):
   **average length of stay** (a running average since sign-up)
 - **Attending less than usual** - enrolled students whose gap since their last
   visit is longer than the center's average, so you can follow up
+- **Needs attention** - three queues with counts: *Running out* (enrolled
+  students with 2 or fewer sessions left on their plan - packages first),
+  *On hold* (longest holds first, from Radius's Holds report; 30+ days is
+  flagged), and *Attendance dropped* (longer since their last visit than the
+  center's average). This is the "who do I talk to at pickup" list.
 - **A map of where students come from** - a circle on each school sized by how
   many of your students attend it, plus neighborhood-density circles by ZIP
   area. The map uses only **public places** (school and ZIP-area locations);
@@ -90,6 +95,19 @@ How the Vercel version differs from running locally:
   records each day even if nobody looked.
 - Without Upstash Redis, history is kept in memory only and fades on
   redeploys/cold starts; "today" always works regardless.
+
+## Health and access
+
+- `GET /api/health` reports sync state (`ok`, last successful Radius sync,
+  consecutive failures) - point an uptime monitor at it. The dashboard shows
+  a red banner if two syncs in a row fail and an amber one if data is stale.
+- Logins are rate-limited: 8 wrong passwords from one address locks it out
+  for 15 minutes.
+- On Vercel, while the default password (1234) is in use the dashboard
+  shows a persistent warning. It lists student names - set a real
+  `DASHBOARD_PASSWORD`.
+- Neighborhood circles are only drawn for ZIPs with 5 or more students, so a
+  small ZIP can never point at a single family.
 
 ## Good to know
 

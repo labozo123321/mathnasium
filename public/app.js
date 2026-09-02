@@ -18,6 +18,7 @@
     map: null,          // Leaflet map instance
     layers: null,       // { schools, zips } layer groups
     basemap: 'streets', // 'streets' | 'satellite'
+    queueTab: 'runningOut',
   };
   try { state.basemap = localStorage.getItem('mn-basemap') || 'streets'; } catch (e) { /* private mode */ }
 
@@ -145,6 +146,7 @@
     $('#lastSync').textContent = o.lastSync
       ? 'Updated ' + new Date(o.lastSync).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
       : 'Waiting for first sync…';
+    renderAlerts(o);
 
     const note = $('#configNote');
     note.hidden = !o.note;
@@ -440,19 +442,7 @@
       h('div', { class: 'sub', text: t.sub }),
     ])));
 
-    // below-average attendance (add a Center column in all-centers view)
-    const below = d.belowAverage || [];
-    const cols = allScope ? ['Student', 'Center', 'School', 'Last seen'] : ['Student', 'School', 'Last seen'];
-    $('#belowWrap').replaceChildren(h('table', { class: 'data-table' }, [
-      h('thead', {}, h('tr', {}, cols.map((c) => h('th', { text: c })))),
-      h('tbody', {}, below.map((r) => h('tr', {}, [
-        h('td', { text: r.name || '—' }),
-        ...(allScope ? [h('td', { text: r.center || '—' })] : []),
-        h('td', { text: r.school || '—' }),
-        h('td', { class: 'num', text: r.daysSinceVisit == null ? '—' : `${r.daysSinceVisit}d ago` }),
-      ]))),
-    ]));
-    $('#belowEmpty').hidden = below.length > 0;
+    renderQueue(d, allScope);
 
     // top schools
     const schools = d.schools || [];
@@ -464,7 +454,7 @@
     const pending = $('#mapPending');
     if (d.geocodePending > 0) {
       pending.hidden = false;
-      pending.textContent = `Locating ${d.geocodePending} more place(s) on the map — they'll appear on the next refresh.`;
+      pending.textContent = `Locating ${d.geocodePending} more place(s) on the map — they'll appear in a moment.`;
     } else pending.hidden = true;
 
     renderMap(d);
@@ -653,6 +643,90 @@
     return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
+  // ---------- needs-attention queue ----------
+  const QUEUE_TABS = [
+    { key: 'runningOut', label: 'Running out', hint: '2 or fewer sessions left on their plan',
+      empty: 'Nobody is about to run out of sessions.' },
+    { key: 'holdsList', label: 'On hold', hint: 'longest holds first - 30+ days is a renewal risk',
+      empty: 'No students on hold.' },
+    { key: 'belowAverage', label: 'Attendance dropped', hint: 'longer since their last visit than this center\'s average',
+      empty: "Everyone's attendance is on track." },
+  ];
+
+  function renderQueue(d, allScope) {
+    const lists = { runningOut: d.runningOut || [], holdsList: d.holdsList || [], belowAverage: d.belowAverage || [] };
+    if (!lists[state.queueTab]) state.queueTab = 'runningOut';
+
+    $('#queueTabs').replaceChildren(...QUEUE_TABS.map((t) => h('button', {
+      type: 'button', role: 'tab', class: 'queue-tab' + (state.queueTab === t.key ? ' active' : ''),
+      'aria-selected': String(state.queueTab === t.key), title: t.hint, 'data-tab': t.key,
+    }, [
+      h('span', { text: t.label }),
+      h('span', { class: 'count', text: String(lists[t.key].length) }),
+    ])));
+
+    const tab = QUEUE_TABS.find((t) => t.key === state.queueTab);
+    const rows = lists[state.queueTab];
+    const cols = ['Student', ...(allScope ? ['Center'] : [])];
+    let cell;
+    if (state.queueTab === 'runningOut') {
+      cols.push('Plan', 'Left', 'Last seen');
+      cell = (r) => [
+        h('td', {}, [h('span', { text: r.plan || '—' }), r.isPackage ? h('span', { class: 'pill', text: 'package' }) : null]),
+        h('td', { class: 'num ' + (r.sessionsLeft <= 1 ? 'flag' : ''), text: String(r.sessionsLeft) }),
+        h('td', { class: 'num', text: r.daysSinceVisit == null ? '—' : `${r.daysSinceVisit}d ago` }),
+      ];
+    } else if (state.queueTab === 'holdsList') {
+      cols.push('School', 'On hold');
+      cell = (r) => [
+        h('td', { text: r.school || '—' }),
+        h('td', { class: 'num ' + (r.daysOnHold >= 30 ? 'flag' : ''),
+          text: r.daysOnHold == null ? '—' : `${r.daysOnHold}d${r.exact ? '' : '*'}` }),
+      ];
+    } else {
+      cols.push('School', 'Last seen');
+      cell = (r) => [
+        h('td', { text: r.school || '—' }),
+        h('td', { class: 'num', text: r.daysSinceVisit == null ? '—' : `${r.daysSinceVisit}d ago` }),
+      ];
+    }
+
+    $('#queueWrap').replaceChildren(h('table', { class: 'data-table' }, [
+      h('thead', {}, h('tr', {}, cols.map((c) => h('th', { text: c })))),
+      h('tbody', {}, rows.map((r) => h('tr', {}, [
+        h('td', { text: r.name || '—' }),
+        ...(allScope ? [h('td', { text: r.center || '—' })] : []),
+        ...cell(r),
+      ]))),
+    ]));
+    const empty = $('#queueEmpty');
+    empty.hidden = rows.length > 0;
+    empty.textContent = tab.empty;
+    $('#queueWrap').hidden = rows.length === 0;
+    if (state.queueTab === 'holdsList' && rows.some((r) => !r.exact)) {
+      empty.hidden = false;
+      empty.textContent = rows.length ? '* estimated from last visit (not in the Radius Holds report)' : tab.empty;
+    }
+  }
+
+  // ---------- alerts (sync health, default password) ----------
+  function renderAlerts(o) {
+    const bar = $('#alertBar');
+    const items = [];
+    const sync = o.sync || {};
+    if (sync.failures >= 2) {
+      const since = sync.lastSuccessAt ? new Date(sync.lastSuccessAt).toLocaleString([], { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' }) : 'unknown';
+      items.push({ level: 'bad', text: `Radius sync is failing (${sync.failures} in a row). Showing the last good data from ${since}. ${sync.lastError ? 'Error: ' + sync.lastError : ''}` });
+    } else if (o.mode === 'live' && o.lastSync && Date.now() - Date.parse(o.lastSync) > 10 * 60 * 1000) {
+      items.push({ level: 'warn', text: 'Data may be stale - last successful Radius sync was ' + new Date(o.lastSync).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + '.' });
+    }
+    if (o.defaultPassword) {
+      items.push({ level: 'warn', text: 'This dashboard is still on the default password (1234). It shows student names - set a real DASHBOARD_PASSWORD in Vercel (Settings → Environment Variables) and redeploy.' });
+    }
+    bar.hidden = items.length === 0;
+    bar.replaceChildren(...items.map((it) => h('div', { class: 'alert ' + it.level, text: it.text })));
+  }
+
   function renderAll() {
     if (!state.overview) return;
     renderChrome();
@@ -677,6 +751,12 @@
   $('#rosterSearch').addEventListener('input', (e) => { state.search = e.target.value; renderRoster(); });
   $('#tglSchools').addEventListener('change', applyMapToggles);
   $('#tglZips').addEventListener('change', applyMapToggles);
+  $('#queueTabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('.queue-tab');
+    if (!btn) return;
+    state.queueTab = btn.dataset.tab;
+    if (state.detail) renderQueue(state.detail, !state.center);
+  });
   const segBtns = document.querySelectorAll('.seg-btn[data-base]');
   segBtns.forEach((b) => b.classList.toggle('active', b.dataset.base === state.basemap));
   segBtns.forEach((b) => b.addEventListener('click', () => {
@@ -727,7 +807,9 @@
       $('#lockMsg').textContent = 'Enter the dashboard password to continue.';
       refresh(true);
     } else {
-      $('#lockMsg').textContent = 'Wrong password - try again.';
+      let msg = 'Wrong password - try again.';
+      try { msg = (await res.json()).error || msg; } catch (e) { /* non-JSON */ }
+      $('#lockMsg').textContent = msg;
     }
   });
 
@@ -789,8 +871,21 @@
     }
   }
 
+  let detailTimer = null;
+  let detailLoading = false;
   function refreshDetail() {
-    loadDetail().then(renderDetail).catch((e) => { if (e && e.auth) showLock(); });
+    if (detailLoading) return;
+    detailLoading = true;
+    clearTimeout(detailTimer);
+    loadDetail()
+      .then(() => {
+        renderDetail();
+        // While places are still being located, come back sooner so the map
+        // fills in progressively instead of waiting for the 5-minute cycle.
+        if (state.detail && state.detail.geocodePending > 0) detailTimer = setTimeout(refreshDetail, 15000);
+      })
+      .catch((e) => { if (e && e.auth) showLock(); })
+      .finally(() => { detailLoading = false; });
   }
 
   refresh(true);

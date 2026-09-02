@@ -16,11 +16,13 @@ const { DashboardService } = require('../src/service');
 const { CenterDetailProvider } = require('../src/detailService');
 const {
   isAuthenticated, checkPassword, authCookieHeader, readJsonBody, parseCookies,
+  loginAllowed, loginFailed, loginSucceeded,
 } = require('../src/auth');
 
 // On Vercel the page must never be open to the world, so with no
 // DASHBOARD_PASSWORD configured it falls back to the default below.
 const PASSWORD = process.env.DASHBOARD_PASSWORD || (process.env.VERCEL ? '1234' : '');
+const USING_DEFAULT_PASSWORD = !process.env.DASHBOARD_PASSWORD && !!process.env.VERCEL;
 const RADIUS_COOKIE = 'mn_radius';
 const YEAR = 60 * 60 * 24 * 365;
 
@@ -76,6 +78,14 @@ module.exports = async (req, res) => {
   // The cron ping just refreshes data + history; it returns no center data,
   // so it stays open (worst case a stranger refreshes our cache). It can only
   // use env-var credentials - browser-stored logins aren't available to it.
+  if (path === '/api/health') {
+    const { service, mock } = resolveService({ headers: {} });
+    return json(res, service.sync.failures >= 2 ? 503 : 200, {
+      ok: service.sync.failures < 2, mode: mock ? 'mock' : 'live',
+      lastSync: service.lastSync, sync: service.sync, defaultPassword: USING_DEFAULT_PASSWORD,
+    });
+  }
+
   if (path === '/api/cron') {
     try {
       const { service } = resolveService({ headers: {} });
@@ -87,11 +97,14 @@ module.exports = async (req, res) => {
   }
 
   if (path === '/api/login' && req.method === 'POST') {
+    if (!loginAllowed(req)) return json(res, 429, { error: 'Too many attempts. Try again in 15 minutes.' });
     const body = await readJsonBody(req);
     if (checkPassword(body.password, PASSWORD)) {
+      loginSucceeded(req);
       res.setHeader('Set-Cookie', authCookieHeader(PASSWORD, req));
       return json(res, 200, { ok: true });
     }
+    loginFailed(req);
     return json(res, 401, { error: 'Wrong password' });
   }
 
@@ -131,6 +144,7 @@ module.exports = async (req, res) => {
     if (path === '/api/overview') {
       await service.refresh();
       const body = service.overview();
+      body.defaultPassword = USING_DEFAULT_PASSWORD;
       if (mock && process.env.VERCEL) {
         body.canSetup = true;
         body.note = 'This is demo data. Connect your Radius login to see your real centers.';

@@ -42,6 +42,7 @@
   </div>
 </header>
 
+<div id="alertBar" class="alert-bar" hidden></div>
 <div id="configNote" class="config-note" hidden></div>
 
 <main id="main" class="content">
@@ -70,10 +71,11 @@
         <p class="muted" id="mapPending" hidden></p>
       </figure>
       <div class="detail-side">
-        <figure class="card">
-          <figcaption><h2>Attending less than usual</h2></figcaption>
-          <div class="scroll-y" id="belowWrap"></div>
-          <p class="empty muted" id="belowEmpty" hidden>Everyone's attendance is on track.</p>
+        <figure class="card queue-card">
+          <figcaption><h2>Needs attention</h2></figcaption>
+          <div class="queue-tabs" id="queueTabs" role="tablist"></div>
+          <div class="scroll-y" id="queueWrap"></div>
+          <p class="empty muted" id="queueEmpty" hidden></p>
         </figure>
         <figure class="card">
           <figcaption><h2>Top schools</h2></figcaption>

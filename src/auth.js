@@ -53,4 +53,32 @@ async function readJsonBody(req) {
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch (e) { return {}; }
 }
 
-module.exports = { COOKIE_NAME, cookieValue, isAuthenticated, checkPassword, authCookieHeader, readJsonBody, parseCookies };
+// Brute-force guard: 8 failed attempts per IP, then a 15-minute lockout.
+// In-memory (per server instance) - simple, but it turns a 4-digit guess from
+// trivial into slow. Pair it with a real passphrase.
+const attempts = new Map();
+const MAX_ATTEMPTS = 8;
+const LOCK_MS = 15 * 60 * 1000;
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  return (fwd ? String(fwd).split(',')[0].trim() : '') || (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+function loginAllowed(req) {
+  const a = attempts.get(clientIp(req));
+  return !(a && a.n >= MAX_ATTEMPTS && a.until > Date.now());
+}
+function loginFailed(req) {
+  const ip = clientIp(req);
+  const now = Date.now();
+  const a = attempts.get(ip) || { n: 0, until: 0 };
+  if (a.until < now) a.n = 0;
+  a.n += 1;
+  a.until = now + LOCK_MS;
+  attempts.set(ip, a);
+}
+function loginSucceeded(req) { attempts.delete(clientIp(req)); }
+
+module.exports = {
+  COOKIE_NAME, cookieValue, isAuthenticated, checkPassword, authCookieHeader, readJsonBody, parseCookies,
+  loginAllowed, loginFailed, loginSucceeded,
+};

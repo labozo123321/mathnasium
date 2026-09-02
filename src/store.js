@@ -20,6 +20,7 @@ class Store {
     this.history = this.#loadHistory();
     this.lastSync = null;
     this.mode = 'starting';
+    this.sync = { failures: 0, lastError: null, lastSuccessAt: null };
   }
 
   #loadHistory() {
@@ -59,6 +60,7 @@ class Store {
     return {
       mode: this.mode,
       lastSync: this.lastSync,
+      sync: { ...this.sync },
       centers: this.centers.map((c) => {
         const l = this.live.get(c.id) || {};
         return {

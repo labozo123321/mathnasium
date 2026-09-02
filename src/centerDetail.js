@@ -65,10 +65,21 @@ function placesForCenter(schoolRows, center) {
 }
 
 // geo = { schools: Map<name,{lat,lng}>, zips: Map<zip,{lat,lng}> }
-function computeCenterDetail(center, schoolRows, attendanceRows, geo) {
+function computeCenterDetail(center, schoolRows, attendanceRows, geo, extras = {}) {
   const tz = center.tz || tzForCenter(center.name);
   const today = todayInTz(tz);
   const rows = forCenter(schoolRows, center);
+
+  // sessions remaining + plan type per student (attendance roster carries it)
+  const plan = new Map(); // StudentID -> { left, type, name }
+  for (const a of attendanceRows || []) {
+    if (a.StudentID == null) continue;
+    const left = a.PrimaryCount == null ? null : Number(a.PrimaryCount);
+    const prev = plan.get(a.StudentID);
+    if (!prev || (left != null && (prev.left == null || left < prev.left))) {
+      plan.set(a.StudentID, { left, type: a.PrimaryTypeName || null, name: a.StudentName || null });
+    }
+  }
 
   const lastSeen = new Map();
   for (const a of attendanceRows || []) {
@@ -104,6 +115,43 @@ function computeCenterDetail(center, schoolRows, attendanceRows, geo) {
       center: center.name,
     }));
 
+  // --- needs-attention queues ---
+  const fullName = (r) => `${r.StudentFirstName || ''} ${r.StudentLastName || ''}`.trim();
+
+  // 1) Running out: enrolled students with <= 2 sessions left on their plan.
+  //    Packages (private/flex) are the urgent renewals; monthly plans are
+  //    shown too, since a low count near month-end still merits a word.
+  const runningOut = enrolled
+    .map((r) => ({ r, p: plan.get(r.StudentId) }))
+    .filter((x) => x.p && x.p.left != null && x.p.left <= 2)
+    .map((x) => ({
+      name: fullName(x.r) || x.p.name || '—',
+      school: (x.r.SchoolName || '').trim() || null,
+      plan: x.p.type,
+      isPackage: !/monthly/i.test(x.p.type || ''),
+      sessionsLeft: x.p.left,
+      daysSinceVisit: daysSince(x.r),
+      center: center.name,
+    }))
+    .sort((a, b) => (b.isPackage - a.isPackage) || (a.sessionsLeft - b.sessionsLeft));
+
+  // 2) On hold: real hold start dates when the caller supplies them,
+  //    otherwise days since the student was last seen (a close proxy).
+  const holdStart = extras.holdStartByStudent || new Map();
+  const holdsList = holds
+    .map((r) => {
+      const startIso = holdStart.get(r.StudentId) || null;
+      const days = startIso ? daysBetween(today, startIso) : daysSince(r);
+      return {
+        name: fullName(r) || '—',
+        school: (r.SchoolName || '').trim() || null,
+        daysOnHold: days,
+        exact: !!startIso,
+        center: center.name,
+      };
+    })
+    .sort((a, b) => (b.daysOnHold ?? -1) - (a.daysOnHold ?? -1));
+
   // aggregate counts by school and by ZIP (never by individual)
   const schoolCounts = {};
   const zipCounts = {};
@@ -117,7 +165,8 @@ function computeCenterDetail(center, schoolRows, attendanceRows, geo) {
     const c = geo && geo.schools && geo.schools.get(name);
     return { name, count, lat: c ? c.lat : null, lng: c ? c.lng : null };
   }).sort((a, b) => b.count - a.count);
-  const zips = Object.entries(zipCounts).map(([zip, count]) => {
+  const ZIP_MIN = 5; // a ZIP with fewer students could point at a family
+  const zips = Object.entries(zipCounts).filter(([, count]) => count >= ZIP_MIN).map(([zip, count]) => {
     const c = geo && geo.zips && geo.zips.get(zip);
     return { zip, count, lat: c ? c.lat : null, lng: c ? c.lng : null };
   }).sort((a, b) => b.count - a.count);
@@ -131,6 +180,8 @@ function computeCenterDetail(center, schoolRows, attendanceRows, geo) {
     memberCount: mem.length,
     avgTenureMonths,
     belowAverage,
+    runningOut,
+    holdsList,
     schools,
     zips,
   };
