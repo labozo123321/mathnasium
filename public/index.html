@@ -4,174 +4,208 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mathnasium Live</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23EF3E33'/%3E%3Ctext x='16' y='23' font-size='19' font-weight='700' font-family='system-ui' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23EF3E33'/%3E%3Ctext x='16' y='23' font-size='19' font-weight='900' font-family='system-ui' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap">
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="style.css">
 <script defer src="vendor/leaflet/leaflet.js"></script>
 </head>
 <body>
-<header class="masthead">
-  <div class="masthead-top">
-    <div class="brand">
-      <span class="brand-mark">M</span>
-      <div>
-        <h1>Mathnasium Live</h1>
-        <div class="brand-sub">Center operations dashboard</div>
-      </div>
+<div class="app">
+<aside class="rail" aria-label="Main navigation">
+  <a class="logo" href="#home" aria-label="Mathnasium Live, back to top">
+    <span class="brand-mark">M</span>
+    <span class="logo-text">mathnasium</span>
+  </a>
+  <nav class="nav">
+    <a class="nav-item active" href="#home" data-nav="home">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-6H9v6H5a2 2 0 0 1-2-2z"/></svg></span>
+      <span class="nav-label">Home</span>
+    </a>
+    <a class="nav-item" href="#centers" data-nav="centers">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M4 9v11h16V9M9 20v-6h6v6M3 9h18"/></svg></span>
+      <span class="nav-label">Centers</span>
+    </a>
+    <a class="nav-item" href="#live" data-nav="live">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></span>
+      <span class="nav-label">Live now</span>
+    </a>
+    <a class="nav-item" href="#trends" data-nav="trends">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"/></svg></span>
+      <span class="nav-label">Trends</span>
+    </a>
+    <a class="nav-item" href="#roster" data-nav="roster">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M16 4a4 4 0 0 1 0 8M22 21c0-3-2-5-5-5.5"/></svg></span>
+      <span class="nav-label">Roster</span>
+    </a>
+  </nav>
+  <div class="rail-foot">
+    <button id="themeToggle" class="nav-item" type="button" title="Toggle light / dark theme" aria-label="Toggle theme">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/></svg></span>
+      <span class="nav-label">Theme</span>
+    </button>
+  </div>
+</aside>
+
+<div class="page">
+  <header class="topbar">
+    <div class="topbar-left">
       <span id="modeBadge" class="badge" hidden></span>
-    </div>
-    <div class="topbar-right">
       <span id="lastSync" class="muted"></span>
-      <button id="themeToggle" class="ghost-btn" title="Toggle theme" aria-label="Toggle theme">◐</button>
     </div>
-  </div>
-  <div class="masthead-filters" role="group" aria-label="Filters">
-    <label class="filter">
-      <span>Center</span>
-      <select id="centerFilter"><option value="">All centers</option></select>
-    </label>
-    <label class="filter">
-      <span>Trend range</span>
-      <select id="rangeFilter">
-        <option value="7">Last 7 days</option>
-        <option value="14">Last 14 days</option>
-        <option value="30" selected>Last 30 days</option>
-        <option value="90">Last 90 days</option>
-      </select>
-    </label>
-  </div>
-</header>
-
-<div id="alertBar" class="alert-bar" hidden></div>
-<div id="configNote" class="config-note" hidden></div>
-
-<main id="main" class="content">
-  <section id="centerDetail" aria-label="Center overview">
-    <div class="detail-head">
-      <h2 id="detailTitle"></h2>
-      <span class="muted" id="detailNote"></span>
+    <div class="filters" role="group" aria-label="Filters">
+      <label class="filter">
+        <span>Center</span>
+        <select id="centerFilter"><option value="">All centers</option></select>
+      </label>
+      <label class="filter">
+        <span>Range</span>
+        <select id="rangeFilter">
+          <option value="7">Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+      </label>
     </div>
-    <div class="kpis" id="detailKpis"></div>
-    <div class="detail-cols">
-      <figure class="card map-card">
-        <figcaption>
-          <h2 id="mapTitle">Where students come from</h2>
-          <div class="map-tools">
-            <div class="seg" role="group" aria-label="Basemap">
-              <button type="button" class="seg-btn active" data-base="streets">Streets</button>
-              <button type="button" class="seg-btn" data-base="satellite">Satellite</button>
-            </div>
-            <div class="map-toggles">
-              <label><input type="checkbox" id="tglSchools" checked> Schools</label>
-              <label><input type="checkbox" id="tglZips" checked> Neighborhoods</label>
-            </div>
-          </div>
-        </figcaption>
-        <div id="map"></div>
-        <p class="muted" id="mapPending" hidden></p>
-      </figure>
-      <div class="detail-side">
-        <figure class="card queue-card">
-          <figcaption><h2>Needs attention</h2></figcaption>
-          <div class="queue-tabs" id="queueTabs" role="tablist"></div>
-          <div class="scroll-y" id="queueWrap"></div>
-          <p class="empty muted" id="queueEmpty" hidden></p>
-        </figure>
-        <figure class="card">
-          <figcaption><h2>Top schools</h2></figcaption>
-          <div class="scroll-y"><table class="data-table" id="schoolsTable">
-            <thead><tr><th>School</th><th>Students</th></tr></thead>
-            <tbody></tbody>
-          </table></div>
-        </figure>
+  </header>
+
+  <div id="alertBar" class="alert-bar" hidden></div>
+  <div id="configNote" class="config-note" hidden></div>
+
+  <main id="main" class="content">
+    <section id="home" aria-label="Center overview">
+      <div class="detail-head">
+        <h2 id="detailTitle"></h2>
+        <span class="muted" id="detailNote"></span>
       </div>
-    </div>
-  </section>
+      <div class="kpis" id="detailKpis"></div>
+      <div class="detail-cols">
+        <figure class="card map-card">
+          <figcaption>
+            <h2 id="mapTitle">Where students come from</h2>
+            <div class="map-tools">
+              <div class="seg" role="group" aria-label="Basemap">
+                <button type="button" class="seg-btn active" data-base="streets">Streets</button>
+                <button type="button" class="seg-btn" data-base="satellite">Satellite</button>
+              </div>
+              <div class="map-toggles">
+                <label><input type="checkbox" id="tglSchools" checked> Schools</label>
+                <label><input type="checkbox" id="tglZips" checked> Neighborhoods</label>
+              </div>
+            </div>
+          </figcaption>
+          <div id="map"></div>
+          <p class="muted" id="mapPending" hidden></p>
+        </figure>
+        <div class="detail-side">
+          <figure class="card queue-card">
+            <figcaption><h2>Needs attention</h2></figcaption>
+            <div class="queue-tabs" id="queueTabs" role="tablist"></div>
+            <div class="scroll-y" id="queueWrap"></div>
+            <p class="empty muted" id="queueEmpty" hidden></p>
+          </figure>
+          <figure class="card">
+            <figcaption><h2>Top schools</h2><span class="muted">leaderboard</span></figcaption>
+            <div class="scroll-y"><table class="data-table leaderboard" id="schoolsTable">
+              <thead><tr><th>#</th><th>School</th><th>Students</th></tr></thead>
+              <tbody></tbody>
+            </table></div>
+          </figure>
+        </div>
+      </div>
+    </section>
 
-  <section aria-labelledby="centersTitle">
-    <h2 id="centersTitle">Centers</h2>
-    <div class="center-grid" id="centerGrid"></div>
-  </section>
+    <section id="centers" aria-labelledby="centersTitle">
+      <h2 id="centersTitle">Centers</h2>
+      <div class="center-grid" id="centerGrid"></div>
+    </section>
 
-  <section class="two-col">
-    <figure class="card" id="byCenterCard">
-      <figcaption>
-        <h2>Checked in right now, by center</h2>
-        <button class="ghost-btn table-toggle" data-target="byCenterTable">Table</button>
-      </figcaption>
-      <div class="chart" id="byCenterChart"></div>
-      <div class="table-view" id="byCenterTable" hidden></div>
-    </figure>
-    <figure class="card" id="inNowCard">
-      <figcaption><h2>In the centers right now</h2></figcaption>
-      <div class="scroll-x"><table class="data-table" id="inNowTable">
-        <thead><tr><th>Student</th><th>Center</th><th>Arrived</th><th>Time in session</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
-      <p class="empty muted" id="inNowEmpty" hidden>Nobody is checked in right now.</p>
-    </figure>
-  </section>
+    <section id="live" class="two-col" aria-label="Live now">
+      <figure class="card" id="byCenterCard">
+        <figcaption>
+          <h2>Checked in right now, by center</h2>
+          <button class="ghost-btn table-toggle" data-target="byCenterTable">Table</button>
+        </figcaption>
+        <div class="chart" id="byCenterChart"></div>
+        <div class="table-view" id="byCenterTable" hidden></div>
+      </figure>
+      <figure class="card" id="inNowCard">
+        <figcaption><h2>In the centers right now</h2></figcaption>
+        <div class="scroll-x"><table class="data-table" id="inNowTable">
+          <thead><tr><th>Student</th><th>Center</th><th>Arrived</th><th>Time in session</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <p class="empty muted" id="inNowEmpty" hidden>Nobody is checked in right now.</p>
+      </figure>
+    </section>
 
-  <section class="two-col">
-    <figure class="card" id="trendCard">
-      <figcaption>
-        <h2>Daily visits</h2>
-        <button class="ghost-btn table-toggle" data-target="trendTable">Table</button>
-      </figcaption>
-      <div class="chart tall" id="trendChart"></div>
-      <div class="table-view" id="trendTable" hidden></div>
-    </figure>
-    <figure class="card" id="hoursCard">
-      <figcaption>
-        <h2>Busiest hours</h2>
-        <button class="ghost-btn table-toggle" data-target="hoursTable">Table</button>
-      </figcaption>
-      <div class="chart tall" id="hoursChart"></div>
-      <div class="table-view" id="hoursTable" hidden></div>
-    </figure>
-  </section>
+    <section id="trends" class="two-col" aria-label="Trends">
+      <figure class="card" id="trendCard">
+        <figcaption>
+          <h2>Daily visits</h2>
+          <button class="ghost-btn table-toggle" data-target="trendTable">Table</button>
+        </figcaption>
+        <div class="chart tall" id="trendChart"></div>
+        <div class="table-view" id="trendTable" hidden></div>
+      </figure>
+      <figure class="card" id="hoursCard">
+        <figcaption>
+          <h2>Busiest hours</h2>
+          <button class="ghost-btn table-toggle" data-target="hoursTable">Table</button>
+        </figcaption>
+        <div class="chart tall" id="hoursChart"></div>
+        <div class="table-view" id="hoursTable" hidden></div>
+      </figure>
+    </section>
 
-  <section aria-labelledby="rosterTitle">
-    <figure class="card">
-      <figcaption class="roster-head">
-        <h2 id="rosterTitle">Roster</h2>
-        <input type="search" id="rosterSearch" placeholder="Search students…" aria-label="Search students">
-      </figcaption>
-      <div class="scroll-x"><table class="data-table" id="rosterTable">
-        <thead><tr><th>Student</th><th>Center</th><th>Enrollment</th><th>Sessions left</th><th>Last activity</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
-      <p class="muted" id="rosterCount"></p>
-    </figure>
-  </section>
-</main>
+    <section id="roster" aria-labelledby="rosterTitle">
+      <figure class="card">
+        <figcaption class="roster-head">
+          <h2 id="rosterTitle">Roster</h2>
+          <input type="search" id="rosterSearch" placeholder="Search students…" aria-label="Search students">
+        </figcaption>
+        <div class="scroll-x"><table class="data-table" id="rosterTable">
+          <thead><tr><th>Student</th><th>Center</th><th>Enrollment</th><th>Sessions left</th><th>Last activity</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <p class="muted" id="rosterCount"></p>
+      </figure>
+    </section>
+  </main>
+
+  <footer class="foot muted">
+    Data from Mathnasium Radius · refreshes automatically · history builds up while the app is running
+  </footer>
+</div>
+</div>
 
 <div id="lock" class="lock" hidden>
   <form id="lockForm" class="lock-card">
-    <h2>This dashboard is private</h2>
+    <span class="brand-mark big" aria-hidden="true">M</span>
+    <h2>Welcome back!</h2>
     <p class="muted" id="lockMsg">Enter the dashboard password to continue.</p>
     <input type="password" id="lockPass" placeholder="Password" autocomplete="current-password" aria-label="Dashboard password">
-    <button type="submit" class="ghost-btn">Unlock</button>
+    <button type="submit" class="btn btn-primary">Unlock</button>
   </form>
 </div>
 
 <div id="setup" class="lock" hidden>
   <form id="setupForm" class="lock-card">
+    <span class="brand-mark big" aria-hidden="true">M</span>
     <h2>Connect your Radius account</h2>
     <p class="muted">You're seeing demo data. Enter the same username and password you use at radius.mathnasium.com and your real centers will appear. It's saved only in this browser.</p>
     <input id="setupUser" placeholder="Radius username" autocomplete="username" aria-label="Radius username">
     <input type="password" id="setupPass" placeholder="Radius password" autocomplete="current-password" aria-label="Radius password">
     <p class="err-msg" id="setupErr" hidden></p>
-    <button type="submit" class="ghost-btn" id="setupGo">Connect</button>
-    <button type="button" class="ghost-btn" id="setupSkip">Not now — keep demo data</button>
+    <button type="submit" class="btn btn-primary" id="setupGo">Connect</button>
+    <button type="button" class="btn btn-secondary" id="setupSkip">Not now — keep demo data</button>
   </form>
 </div>
 
 <div id="tooltip" class="tooltip" hidden></div>
-
-<footer class="foot muted">
-  Data from Mathnasium Radius · refreshes automatically · history builds up while the app is running
-</footer>
 
 <script src="app.js"></script>
 </body>

@@ -29,7 +29,10 @@ centers**; use the top filter to focus one center):
   individual student home addresses are never plotted, geocoded, or sent
   anywhere.
 
-Everything auto-refreshes; light and dark theme included.
+Everything auto-refreshes. The UI follows Duolingo's design language (chunky
+rounded cards, pressable buttons, bold rounded type, a left icon rail that
+becomes a bottom tab bar on phones) in Mathnasium red; light and dark theme
+included.
 
 ## Quick start
 

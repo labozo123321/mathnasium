@@ -36,6 +36,24 @@
     return el;
   }
 
+  // Inline icons (static markup, no user data goes through here).
+  const ICONS = {
+    users: '<circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M16 4a4 4 0 0 1 0 8M22 21c0-3-2-5-5-5.5"/>',
+    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>',
+    pause: '<path d="M8 5v14M16 5v14"/>',
+    flame: '<path d="M12 2c1 4 6 6.5 6 12a6 6 0 0 1-12 0c0-2.5 1.5-4 1.5-4S8 13 10 13c1.5-3-1-7 2-11z"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    hourglass: '<path d="M6 2h12M6 22h12M7 2c0 6 5 6 5 10s-5 4-5 10M17 2c0 6-5 6-5 10s5 4 5 10"/>',
+    down: '<path d="M3 7l6 6 4-4 8 8M14 17h7v-7"/>',
+  };
+  function icon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = ICONS[name] || '';
+    return svg;
+  }
+
   function fmtMins(m) {
     if (m == null) return '—';
     return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`;
@@ -182,11 +200,11 @@
     const svg = h('svg', { viewBox: `0 0 ${W} ${H}`, class: 'spark', 'aria-hidden': 'true' });
     HOURS.forEach((hh, i) => {
       const v = byHour[hh] || 0;
-      const bh = v ? Math.max((v / max) * (H - 6), 2) : 1;
+      const bh = v ? Math.max((v / max) * (H - 6), 2) : 2;
       const x = i * (W / HOURS.length) + (W / HOURS.length - bw) / 2;
       svg.appendChild(h('path', {
         d: barPath(x, H - bh, bw, bh, 2, false),
-        fill: hh === nowH ? 'var(--series-1)' : 'var(--de-emphasis)',
+        fill: hh === nowH ? 'var(--series-1)' : (v ? 'var(--de-emphasis)' : 'var(--grid-line)'),
       }));
     });
     return svg;
@@ -204,7 +222,8 @@
       }, [
         h('div', { class: 'head' }, [
           h('span', { class: 'name', text: c.name }),
-          h('span', { class: 'dot' + ((c.checkedIn || c.staffIn) ? ' on' : ''), title: (c.checkedIn || c.staffIn) ? 'Open - people are checked in' : 'Quiet' }),
+          h('span', { class: 'status' + ((c.checkedIn || c.staffIn) ? ' on' : ''), text: (c.checkedIn || c.staffIn) ? 'Open' : 'Quiet',
+            title: (c.checkedIn || c.staffIn) ? 'People are checked in' : 'Nobody checked in' }),
         ]),
         h('div', { class: 'live-num' }, [
           document.createTextNode(c.checkedIn == null ? '—' : String(c.checkedIn)),
@@ -281,8 +300,8 @@
 
   function renderTrend() {
     const data = state.trends;
-    const W = 560; const Hgt = 220; const left = 36; const right = 16; const top = 12; const bottom = 26;
-    const iw = W - left - right; const ih = Hgt - top - bottom;
+    const W = 560; const Hgt = 220; let left = 36; const right = 16; const top = 12; const bottom = 26;
+    let iw = W - left - right; const ih = Hgt - top - bottom;
     const box = $('#trendChart');
     if (!data.length) {
       box.replaceChildren(h('p', { class: 'muted empty', text: 'History builds up while the app runs - check back tomorrow.' }));
@@ -292,6 +311,8 @@
     const max = Math.max(1, ...data.map((d) => d.visits));
     const ticks = niceTicks(max);
     const topVal = ticks[ticks.length - 1];
+    left = 14 + topVal.toLocaleString().length * 7.5;
+    iw = W - left - right;
     const x = (i) => left + (data.length === 1 ? iw / 2 : (i / (data.length - 1)) * iw);
     const y = (v) => top + ih - (v / topVal) * ih;
 
@@ -349,11 +370,13 @@
     }
     const HOURS = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
     const labels = HOURS.map((hh) => (hh === 12 ? '12p' : hh > 12 ? (hh - 12) + 'p' : hh + 'a'));
-    const W = 560; const Hgt = 220; const left = 36; const right = 12; const top = 12; const bottom = 26;
-    const iw = W - left - right; const ih = Hgt - top - bottom;
+    const W = 560; const Hgt = 220; const right = 12; const top = 12; const bottom = 26;
+    const ih = Hgt - top - bottom;
     const max = Math.max(1, ...HOURS.map((hh) => byHour[hh] || 0));
     const ticks = niceTicks(max);
     const topVal = ticks[ticks.length - 1];
+    const left = 14 + topVal.toLocaleString().length * 7.5;
+    const iw = W - left - right;
     const bw = Math.min(iw / HOURS.length - 4, 24);
     const svg = h('svg', { viewBox: `0 0 ${W} ${Hgt}`, role: 'img', 'aria-label': 'Arrivals by hour of day' });
     for (const t of ticks) {
@@ -429,26 +452,39 @@
     const inNow = anyLive ? sumOv((c) => c.checkedIn) : null;
     const visitsToday = anyLive ? sumOv((c) => c.visitsToday) : null;
 
+    const pct = (a, b) => (a != null && b > 0 ? Math.max(0, Math.min(100, Math.round((a / b) * 100))) : null);
+    const activePct = pct(d.active, d.enrolled);
+    const holdPct = pct(d.holds, d.enrolled);
+    const nowPct = pct(inNow, visitsToday);
     const tiles = [
-      { label: 'Enrolled students', value: d.enrolled, sub: 'currently enrolled' },
-      { label: 'Active students', value: d.active, sub: 'attended in last 30 days' },
-      { label: 'On hold', value: d.holds, sub: 'frozen memberships' },
-      { label: 'Attendance today', value: visitsToday ?? '—', sub: `${inNow ?? '—'} in session now` },
-      { label: 'Avg length of stay', value: fmtMonths(d.avgTenureMonths), sub: 'running average since sign-up' },
+      { tone: 't-blue', icon: 'users', label: 'Enrolled', value: d.enrolled, sub: 'students enrolled now' },
+      { tone: 't-green', icon: 'bolt', label: 'Active', value: d.active,
+        sub: activePct == null ? 'attended in last 30 days' : `${activePct}% of enrolled, last 30 days`, bar: activePct },
+      { tone: 't-orange', icon: 'pause', label: 'On hold', value: d.holds,
+        sub: holdPct == null ? 'frozen memberships' : `${holdPct}% of enrolled frozen`, bar: holdPct },
+      { tone: 't-red', icon: 'flame', label: 'Visits today', value: visitsToday ?? '—',
+        sub: `${inNow ?? '—'} in session now`, bar: nowPct },
+      { tone: 't-purple', icon: 'clock', label: 'Avg stay', value: fmtMonths(d.avgTenureMonths), sub: 'running average since sign-up' },
     ];
-    $('#detailKpis').replaceChildren(...tiles.map((t) => h('div', { class: 'tile' }, [
-      h('div', { class: 'label', text: t.label }),
-      h('div', { class: 'value', text: String(t.value ?? '—') }),
-      h('div', { class: 'sub', text: t.sub }),
+    $('#detailKpis').replaceChildren(...tiles.map((t) => h('div', { class: 'tile ' + t.tone }, [
+      h('div', { class: 'tile-icon' }, icon(t.icon)),
+      h('div', { class: 'tile-body' }, [
+        h('div', { class: 'value', text: String(t.value ?? '—') }),
+        h('div', { class: 'label', text: t.label }),
+        h('div', { class: 'sub', text: t.sub }),
+        t.bar == null ? null : h('div', { class: 'bar', role: 'progressbar', 'aria-valuenow': String(t.bar), 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-label': t.label },
+          h('span', { style: `width:${t.bar}%` })),
+      ]),
     ])));
 
     renderQueue(d, allScope);
 
     // top schools
     const schools = d.schools || [];
-    $('#schoolsTable tbody').replaceChildren(...schools.slice(0, 60).map((s) => h('tr', {}, [
+    $('#schoolsTable tbody').replaceChildren(...schools.slice(0, 60).map((s, i) => h('tr', {}, [
+      h('td', { class: 'rank' }, h('span', { class: 'medal' + (i < 3 ? ' m' + (i + 1) : ''), text: String(i + 1) })),
       h('td', { text: s.name }),
-      h('td', { class: 'num', text: String(s.count) }),
+      h('td', { class: 'num score', text: String(s.count) }),
     ])));
 
     const pending = $('#mapPending');
@@ -506,7 +542,7 @@
       defs.appendChild(g);
     };
     grad('mn-grad-school', '35%', '30%', '72%', [['0%', '#FFA294'], ['40%', '#EF3E33'], ['100%', '#7E0C09']]);
-    grad('mn-grad-zip', '50%', '50%', '50%', [['0%', '#12A9C4', 0.62], ['62%', '#0C90A8', 0.2], ['100%', '#0C90A8', 0.03]]);
+    grad('mn-grad-zip', '50%', '50%', '50%', [['0%', '#1CB0F6', 0.62], ['62%', '#1899D6', 0.2], ['100%', '#1899D6', 0.03]]);
     svg.insertBefore(defs, svg.firstChild);
   }
 
@@ -562,7 +598,7 @@
       return;
     }
 
-    const s2 = cssVar('--series-2', '#0C90A8');
+    const s2 = cssVar('--series-2', '#1899D6');
     const surface = cssVar('--surface', '#ffffff');
     const dark = isDarkTheme();
 
@@ -645,11 +681,11 @@
 
   // ---------- needs-attention queue ----------
   const QUEUE_TABS = [
-    { key: 'runningOut', label: 'Running out', hint: '2 or fewer sessions left on their plan',
+    { key: 'runningOut', label: 'Running out', icon: 'hourglass', hint: '2 or fewer sessions left on their plan',
       empty: 'Nobody is about to run out of sessions.' },
-    { key: 'holdsList', label: 'On hold', hint: 'longest holds first - 30+ days is a renewal risk',
+    { key: 'holdsList', label: 'On hold', icon: 'pause', hint: 'longest holds first - 30+ days is a renewal risk',
       empty: 'No students on hold.' },
-    { key: 'belowAverage', label: 'Attendance dropped', hint: 'longer since their last visit than this center\'s average',
+    { key: 'belowAverage', label: 'Dropped', icon: 'down', hint: 'longer since their last visit than this center\'s average',
       empty: "Everyone's attendance is on track." },
   ];
 
@@ -661,6 +697,7 @@
       type: 'button', role: 'tab', class: 'queue-tab' + (state.queueTab === t.key ? ' active' : ''),
       'aria-selected': String(state.queueTab === t.key), title: t.hint, 'data-tab': t.key,
     }, [
+      icon(t.icon),
       h('span', { text: t.label }),
       h('span', { class: 'count', text: String(lists[t.key].length) }),
     ])));
@@ -670,7 +707,7 @@
     const cols = ['Student', ...(allScope ? ['Center'] : [])];
     let cell;
     if (state.queueTab === 'runningOut') {
-      cols.push('Plan', 'Left', 'Last seen');
+      cols.push('Plan', 'Left', 'Seen');
       cell = (r) => [
         h('td', {}, [h('span', { text: r.plan || '—' }), r.isPackage ? h('span', { class: 'pill', text: 'package' }) : null]),
         h('td', { class: 'num ' + (r.sessionsLeft <= 1 ? 'flag' : ''), text: String(r.sessionsLeft) }),
@@ -684,14 +721,14 @@
           text: r.daysOnHold == null ? '—' : `${r.daysOnHold}d${r.exact ? '' : '*'}` }),
       ];
     } else {
-      cols.push('School', 'Last seen');
+      cols.push('School', 'Seen');
       cell = (r) => [
         h('td', { text: r.school || '—' }),
         h('td', { class: 'num', text: r.daysSinceVisit == null ? '—' : `${r.daysSinceVisit}d ago` }),
       ];
     }
 
-    $('#queueWrap').replaceChildren(h('table', { class: 'data-table' }, [
+    $('#queueWrap').replaceChildren(h('table', { class: 'data-table queue-table' }, [
       h('thead', {}, h('tr', {}, cols.map((c) => h('th', { text: c })))),
       h('tbody', {}, rows.map((r) => h('tr', {}, [
         h('td', { text: r.name || '—' }),
@@ -846,6 +883,21 @@
     $('#setup').hidden = true;
     try { sessionStorage.setItem('mn-setup-skip', '1'); } catch (e) { /* private mode */ }
   });
+
+  // ---------- rail: highlight the section in view ----------
+  const navItems = [...document.querySelectorAll('.nav-item[data-nav]')];
+  const navSections = navItems.map((a) => document.getElementById(a.dataset.nav)).filter(Boolean);
+  let navTick = false;
+  function updateNav() {
+    navTick = false;
+    const line = window.scrollY + window.innerHeight * 0.3;
+    let current = navSections[0];
+    for (const sec of navSections) if (sec.offsetTop <= line) current = sec;
+    if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 4) current = navSections[navSections.length - 1];
+    navItems.forEach((a) => a.classList.toggle('active', current && a.dataset.nav === current.id));
+  }
+  window.addEventListener('scroll', () => { if (!navTick) { navTick = true; requestAnimationFrame(updateNav); } }, { passive: true });
+  window.addEventListener('resize', updateNav);
 
   // ---------- refresh loop ----------
   let refreshing = false;
