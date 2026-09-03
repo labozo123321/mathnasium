@@ -122,6 +122,15 @@
               <tbody></tbody>
             </table></div>
           </figure>
+          <figure class="card" id="monthlyCard">
+            <figcaption>
+              <h2>New enrollments by month</h2>
+              <button class="ghost-btn table-toggle" data-target="monthlyTable">Table</button>
+            </figcaption>
+            <div class="chart" id="monthlyChart"></div>
+            <div class="table-view" id="monthlyTable" hidden></div>
+            <p class="muted" id="monthlyNote"></p>
+          </figure>
           <figure class="card">
             <figcaption><h2>Top schools</h2><span class="muted">leaderboard</span></figcaption>
             <div class="scroll-y"><table class="data-table leaderboard" id="schoolsTable">
@@ -155,6 +164,18 @@
         </table></div>
         <p class="empty muted" id="inNowEmpty" hidden>Nobody is checked in right now.</p>
       </figure>
+      <figure class="card span-2" id="coverageCard">
+        <figcaption>
+          <h2>Staffing coverage today</h2>
+          <div class="legend" aria-label="Legend">
+            <span class="legend-item"><i class="swatch area"></i>Students on the floor</span>
+            <span class="legend-item"><i class="swatch line"></i>Instructors</span>
+            <span class="legend-item"><i class="swatch band"></i>Understaffed (over 6:1 or nobody)</span>
+          </div>
+        </figcaption>
+        <div class="coverage-grid" id="coverageChart"></div>
+        <p class="empty muted" id="coverageEmpty" hidden>No check-ins yet today.</p>
+      </figure>
       <figure class="card span-2" id="staffCard">
         <figcaption><h2>Instructor hours · last 7 days</h2><span class="muted" id="staffNote"></span></figcaption>
         <div class="scroll-x"><table class="data-table" id="staffTable">
@@ -181,6 +202,17 @@
         </figcaption>
         <div class="chart tall" id="hoursChart"></div>
         <div class="table-view" id="hoursTable" hidden></div>
+      </figure>
+      <figure class="card span-2" id="heatCard">
+        <figcaption>
+          <h2>Busiest hours by weekday</h2>
+          <div class="map-tools">
+            <span class="muted" id="heatNote"></span>
+            <button class="ghost-btn table-toggle" data-target="heatTable">Table</button>
+          </div>
+        </figcaption>
+        <div class="chart" id="heatChart"></div>
+        <div class="table-view" id="heatTable" hidden></div>
       </figure>
     </section>
 

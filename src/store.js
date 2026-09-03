@@ -77,6 +77,7 @@ class Store {
           ratio: l.ratioNow ?? null,
           ratioLevel: l.ratioLevel || null,
           understaffedToday: l.understaffedToday ?? null,
+          coverage: l.coverageToday || [],
           ...centerWeekStats(this.history, c.id, todayInTz(c.tz)),
           updatedAt: l.updatedAt || null,
           error: l.error || null,

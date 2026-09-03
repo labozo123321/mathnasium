@@ -430,6 +430,181 @@
     ]));
   }
 
+  // ---------- busiest hours by weekday (heatmap from the trend history) ----------
+  const HEAT_HOURS = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+  const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const hourLabel = (hh) => (hh === 12 ? '12p' : hh > 12 ? (hh - 12) + 'p' : hh + 'a');
+  const hourLong = (hh) => (hh === 12 ? '12 PM' : hh > 12 ? (hh - 12) + ' PM' : hh + ' AM');
+  function renderHeatmap() {
+    const box = $('#heatChart');
+    const days = state.trends || [];
+    const sum = Array.from({ length: 7 }, () => ({}));
+    const nDays = new Array(7).fill(0);
+    for (const d of days) {
+      const dow = (new Date(d.date + 'T00:00:00').getDay() + 6) % 7; // Mon = 0
+      nDays[dow]++;
+      for (const [hh, n] of Object.entries(d.byHour || {})) sum[dow][hh] = (sum[dow][hh] || 0) + n;
+    }
+    const rows = WEEKDAYS.map((_, i) => i).filter((i) => nDays[i] > 0);
+    if (!rows.length) {
+      box.replaceChildren(h('p', { class: 'muted empty', text: 'Builds up from the daily history - check back after a few days.' }));
+      $('#heatTable').replaceChildren();
+      $('#heatNote').textContent = '';
+      return;
+    }
+    const avg = (i, hh) => (sum[i][hh] || 0) / nDays[i];
+    const max = Math.max(1, ...rows.flatMap((i) => HEAT_HOURS.map((hh) => avg(i, hh))));
+    const W = 720; const left = 44; const top = 22; const cw = (W - left - 8) / HEAT_HOURS.length; const ch = 34; const gap = 3;
+    const Hgt = top + rows.length * ch + 6;
+    const svg = h('svg', { viewBox: `0 0 ${W} ${Hgt}`, role: 'img', 'aria-label': 'Average arrivals by weekday and hour' });
+    HEAT_HOURS.forEach((hh, j) => svg.appendChild(h('text', { x: left + j * cw + cw / 2, y: 14, 'text-anchor': 'middle', text: hourLabel(hh) })));
+    const now = new Date();
+    const nowDow = (now.getDay() + 6) % 7;
+    const dark = isDarkTheme(); // dark ramp runs dark -> light, so strong cells need dark ink
+    const inkFor = (step) => (dark ? (step >= 3 ? '#131F24' : 'var(--text-primary)') : (step >= 3 ? '#fff' : 'var(--text-primary)'));
+    rows.forEach((i, r) => {
+      const y = top + r * ch;
+      svg.appendChild(h('text', { x: left - 8, y: y + ch / 2 + 4, 'text-anchor': 'end', text: WEEKDAYS[i] }));
+      HEAT_HOURS.forEach((hh, j) => {
+        const v = avg(i, hh);
+        const step = v <= 0 ? 0 : Math.min(5, Math.max(1, Math.ceil((v / max) * 5)));
+        const x = left + j * cw;
+        const fill = step === 0 ? 'var(--surface-2)' : `var(--heat-${step})`;
+        const isNow = i === nowDow && hh === now.getHours();
+        svg.appendChild(h('rect', {
+          x: x + gap / 2, y: y + gap / 2, width: cw - gap, height: ch - gap, rx: 8, fill,
+          stroke: isNow ? 'var(--text-primary)' : 'none', 'stroke-width': isNow ? 2.5 : 0,
+          onpointermove: (e) => showTip(e, tipRows(`${Math.round(v * 10) / 10} arrivals`, `${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][i]} ${hourLong(hh)} · average over ${nDays[i]} day${nDays[i] === 1 ? '' : 's'}`)),
+          onpointerleave: hideTip,
+        }));
+        if (v >= 0.5) {
+          svg.appendChild(h('text', {
+            x: x + cw / 2, y: y + ch / 2 + 4, 'text-anchor': 'middle', class: 'cell-label',
+            style: 'fill:' + inkFor(step), text: String(Math.round(v)),
+          }));
+        }
+      });
+    });
+    box.replaceChildren(svg);
+    $('#heatNote').textContent = `average arrivals per hour · last ${days.length} days · outlined = right now`;
+    $('#heatTable').replaceChildren(h('table', {}, [
+      h('thead', {}, h('tr', {}, [h('th', { text: 'Day' }), ...HEAT_HOURS.map((hh) => h('th', { text: hourLabel(hh) }))])),
+      h('tbody', {}, rows.map((i) => h('tr', {}, [h('td', { text: WEEKDAYS[i] }), ...HEAT_HOURS.map((hh) => h('td', { class: 'num', text: String(Math.round(avg(i, hh) * 10) / 10) }))]))),
+    ]));
+  }
+
+  // ---------- staffing coverage today (small multiples) ----------
+  const RATIO_BAD = 6; // keep in step with dayStats.js
+  const isBad = (p) => p.s > 0 && (p.e === 0 || p.s / p.e > RATIO_BAD);
+  const fmtClock = (m) => { const hh = Math.floor(m / 60); const mm = m % 60; return `${hh % 12 || 12}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'PM' : 'AM'}`; };
+  function coverageSvg(c, wide) {
+    const pts = c.coverage || [];
+    const W = wide ? 960 : 320; const Hgt = wide ? 200 : 120; const left = 26; const right = 8; const top = 10; const bottom = 18;
+    const iw = W - left - right; const ih = Hgt - top - bottom;
+    const T0 = 9 * 60; const T1 = 21 * 60;
+    const x = (t) => left + ((t - T0) / (T1 - T0)) * iw;
+    const max = Math.max(4, ...pts.map((p) => Math.max(p.s, p.e)));
+    const y = (v) => top + ih - (v / max) * ih;
+    const svg = h('svg', { viewBox: `0 0 ${W} ${Hgt}`, role: 'img', 'aria-label': `Students and instructors through the day at ${c.name}` });
+    for (const hh of [10, 12, 14, 16, 18, 20]) {
+      svg.appendChild(h('line', { x1: x(hh * 60), y1: top, x2: x(hh * 60), y2: top + ih, stroke: 'var(--grid-line)', 'stroke-width': 1 }));
+      svg.appendChild(h('text', { x: x(hh * 60), y: Hgt - 5, 'text-anchor': 'middle', text: hourLabel(hh) }));
+    }
+    svg.appendChild(h('text', { x: left - 4, y: top + 4, 'text-anchor': 'end', text: String(max) }));
+    svg.appendChild(h('text', { x: left - 4, y: top + ih, 'text-anchor': 'end', text: '0' }));
+    if (!pts.length) {
+      svg.appendChild(h('text', { x: left + iw / 2, y: top + ih / 2, 'text-anchor': 'middle', text: 'no check-ins yet' }));
+      return svg;
+    }
+    // understaffed bands (merge consecutive bad buckets)
+    let start = null;
+    const bands = [];
+    pts.forEach((p, i) => {
+      if (isBad(p) && start == null) start = p.t;
+      if ((!isBad(p) || i === pts.length - 1) && start != null) { bands.push([start, isBad(p) ? p.t + 15 : p.t]); start = null; }
+    });
+    for (const [a, b] of bands) svg.appendChild(h('rect', { x: x(a), y: top, width: Math.max(2, x(b) - x(a)), height: ih, fill: 'rgba(255, 75, 75, 0.22)' }));
+    const sPts = pts.map((p) => `${x(p.t)},${y(p.s)}`).join(' ');
+    svg.appendChild(h('path', { d: `M${x(pts[0].t)},${y(0)} L${sPts.split(' ').join(' L')} L${x(pts[pts.length - 1].t)},${y(0)} Z`, fill: 'var(--series-1-wash)', stroke: 'none' }));
+    svg.appendChild(h('polyline', { points: sPts, fill: 'none', stroke: 'var(--series-1)', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    svg.appendChild(h('polyline', { points: pts.map((p) => `${x(p.t)},${y(p.e)}`).join(' '), fill: 'none', stroke: 'var(--series-2)', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    const peak = pts.reduce((a, p) => (p.s > a.s ? p : a), pts[0]);
+    if (peak.s > 0) svg.appendChild(h('text', { x: Math.min(x(peak.t), W - right - 14), y: Math.max(y(peak.s) - 5, 9), 'text-anchor': 'middle', class: 'val-label', text: String(peak.s) }));
+    const cross = h('line', { y1: top, y2: top + ih, stroke: 'var(--axis)', 'stroke-width': 1, visibility: 'hidden' });
+    svg.appendChild(cross);
+    svg.appendChild(h('rect', {
+      x: left, y: top, width: iw, height: ih, fill: 'transparent',
+      onpointermove: (e) => {
+        const r = svg.getBoundingClientRect();
+        const px = ((e.clientX - r.left) / r.width) * W;
+        const t = T0 + ((px - left) / iw) * (T1 - T0);
+        let best = pts[0];
+        for (const p of pts) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
+        cross.setAttribute('x1', x(best.t)); cross.setAttribute('x2', x(best.t)); cross.setAttribute('visibility', 'visible');
+        const ratio = best.e ? `${Math.round((best.s / best.e) * 10) / 10}:1` : (best.s ? 'nobody on the floor' : '—');
+        showTip(e, tipRows(`${best.s} students · ${best.e} instructor${best.e === 1 ? '' : 's'}`, `${fmtClock(best.t)} · ${ratio}${isBad(best) ? ' · understaffed' : ''}`));
+      },
+      onpointerleave: () => { cross.setAttribute('visibility', 'hidden'); hideTip(); },
+    }));
+    return svg;
+  }
+  function renderCoverage() {
+    const centers = visibleCenters();
+    const grid = $('#coverageChart');
+    grid.classList.toggle('single', centers.length === 1);
+    const any = centers.some((c) => (c.coverage || []).length);
+    $('#coverageEmpty').hidden = any;
+    grid.replaceChildren(...centers.map((c) => h('div', { class: 'cov' }, [
+      h('div', { class: 'cov-head' }, [
+        h('span', { class: 'name', text: c.name }),
+        h('span', { class: 'muted', text: c.understaffedToday ? `${c.understaffedToday} min understaffed` : 'covered all day' }),
+      ]),
+      coverageSvg(c, centers.length === 1),
+    ])));
+  }
+
+  // ---------- new enrollments by month ----------
+  function renderMonthly(d) {
+    const data = d.monthly || [];
+    const box = $('#monthlyChart');
+    if (!data.length) { box.replaceChildren(h('p', { class: 'muted empty', text: 'No enrollment data yet.' })); return; }
+    const W = 420; const Hgt = 170; const left = 30; const right = 8; const top = 18; const bottom = 24;
+    const iw = W - left - right; const ih = Hgt - top - bottom;
+    const max = Math.max(1, ...data.map((m) => m.enrolled));
+    const ticks = niceTicks(max);
+    const topVal = ticks[ticks.length - 1];
+    const bw = Math.min(iw / data.length - 5, 26);
+    const svg = h('svg', { viewBox: `0 0 ${W} ${Hgt}`, role: 'img', 'aria-label': 'New enrollments per month, last 12 months' });
+    for (const t of ticks) {
+      const yy = top + ih - (t / topVal) * ih;
+      svg.appendChild(h('line', { x1: left, y1: yy, x2: W - right, y2: yy, stroke: 'var(--grid-line)', 'stroke-width': 1 }));
+      svg.appendChild(h('text', { x: left - 5, y: yy + 3, 'text-anchor': 'end', text: String(t) }));
+    }
+    const monthName = (k) => new Date(k + '-15T00:00:00').toLocaleString([], { month: 'short' });
+    data.forEach((m, i) => {
+      const cx = left + i * (iw / data.length) + (iw / data.length) / 2;
+      const bh = (m.enrolled / topVal) * ih;
+      const current = i === data.length - 1;
+      if (m.enrolled > 0) svg.appendChild(h('path', { d: barPath(cx - bw / 2, top + ih - bh, bw, bh, 4, false), fill: current ? 'var(--series-1-wash)' : 'var(--series-1)', stroke: current ? 'var(--series-1)' : 'none', 'stroke-width': current ? 2 : 0 }));
+      if (i % 2 === 0 || current) svg.appendChild(h('text', { x: cx, y: Hgt - 7, 'text-anchor': 'middle', text: monthName(m.month) }));
+      if (m.enrolled === max || current) svg.appendChild(h('text', { x: cx, y: top + ih - bh - 5, 'text-anchor': 'middle', class: 'val-label', text: String(m.enrolled) }));
+      svg.appendChild(h('rect', {
+        x: cx - (iw / data.length) / 2, y: top, width: iw / data.length, height: ih, fill: 'transparent',
+        onpointermove: (e) => showTip(e, tipRows(`${m.enrolled} enrolled`, `${new Date(m.month + '-15T00:00:00').toLocaleString([], { month: 'long', year: 'numeric' })} · $${m.collected.toLocaleString()} collected at sign-up${current ? ' · month so far' : ''}`)),
+        onpointerleave: hideTip,
+      }));
+    });
+    box.replaceChildren(svg);
+    $('#monthlyTable').replaceChildren(h('table', {}, [
+      h('thead', {}, h('tr', {}, [h('th', { text: 'Month' }), h('th', { text: 'Enrolled' }), h('th', { text: 'Collected at sign-up' })])),
+      h('tbody', {}, data.slice().reverse().map((m) => h('tr', {}, [h('td', { text: m.month }), h('td', { class: 'num', text: String(m.enrolled) }), h('td', { class: 'num', text: '$' + m.collected.toLocaleString() })]))),
+    ]));
+    const r = d.referrals || {};
+    $('#monthlyNote').textContent = r.total
+      ? `${r.referred} of ${r.total} opportunities in the last 12 months came from a parent referral (${Math.round((r.referred / r.total) * 100)}%). Radius records no other source, so ask staff to fill in the referral field.`
+      : '';
+  }
+
   function renderRoster() {
     const centers = visibleCenters();
     const rows = [];
@@ -513,6 +688,7 @@
 
     renderQueue(d, allScope);
     renderPipeline(d, allScope);
+    renderMonthly(d);
     renderStaff();
 
     // top schools
@@ -913,6 +1089,8 @@
     renderInNow();
     renderTrend();
     renderHours();
+    renderHeatmap();
+    renderCoverage();
     renderRoster();
   }
 

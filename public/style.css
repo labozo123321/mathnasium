@@ -24,6 +24,9 @@
   --red: #FF4B4B;    --red-shade: #EA2B2B;    --red-ink: #D42525;
   --navy: #2B70C9;   --navy-shade: #1F5AA6;   --navy-ink: #1F5AA6;   --navy-wash: #E3EEFB;
 
+  /* sequential ramp for the heatmap (validated: one hue, monotone, >= 2:1 at the light end) */
+  --heat-1: #F29A90; --heat-2: #EC7A6E; --heat-3: #E35A4E; --heat-4: #CF3328; --heat-5: #9E140E;
+
   /* data marks (validated) */
   --series-1: #D62E22;
   --series-2: #1899D6;
@@ -64,6 +67,7 @@
     --purple-ink: #D9A3FF; --purple-wash: rgba(206, 130, 255, 0.16);
     --red-ink: #FF6B6B;
     --navy-ink: #7FB3F5; --navy-wash: rgba(43, 112, 201, 0.18);
+    --heat-1: #8A3A32; --heat-2: #A8443B; --heat-3: #C65046; --heat-4: #E46156; --heat-5: #FF9088;
     --series-1: #F2564B; --series-2: #1899D6; --series-1-wash: rgba(242, 86, 75, 0.16);
     --de-emphasis: #3E4F59;
     --page: #131F24; --surface: #131F24; --surface-2: #1B2A31; --hover: #202F36; --input: #202F36;
@@ -84,6 +88,7 @@
   --purple-ink: #D9A3FF; --purple-wash: rgba(206, 130, 255, 0.16);
   --red-ink: #FF6B6B;
   --navy-ink: #7FB3F5; --navy-wash: rgba(43, 112, 201, 0.18);
+  --heat-1: #8A3A32; --heat-2: #A8443B; --heat-3: #C65046; --heat-4: #E46156; --heat-5: #FF9088;
   --series-1: #F2564B; --series-2: #1899D6; --series-1-wash: rgba(242, 86, 75, 0.16);
   --de-emphasis: #3E4F59;
   --page: #131F24; --surface: #131F24; --surface-2: #1B2A31; --hover: #202F36; --input: #202F36;
@@ -482,6 +487,26 @@ figure.card figcaption h2 { font-size: 16px; font-weight: 900; letter-spacing: -
 .table-view th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-weight: 900; }
 .table-view .num { font-variant-numeric: tabular-nums; }
 .empty { padding: 20px 0; }
+
+/* staffing coverage small multiples */
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); font-weight: 800; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { display: inline-block; width: 14px; height: 10px; border-radius: 3px; }
+.swatch.area { background: var(--series-1-wash); border-top: 2px solid var(--series-1); }
+.swatch.line { height: 0; border-top: 2px solid var(--series-2); }
+.swatch.band { background: rgba(255, 75, 75, 0.22); }
+.coverage-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.coverage-grid.single { grid-template-columns: 1fr; }
+.cov { border: 2px solid var(--border); border-radius: 14px; padding: 10px 12px 8px; background: var(--surface); min-width: 0; }
+.cov-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+.cov-head .name { font-weight: 900; font-size: 13px; }
+.cov-head .muted { font-size: 11px; }
+.cov svg { display: block; width: 100%; height: auto; }
+.cov text { font: 700 10px "Nunito", "Segoe UI", system-ui, sans-serif; fill: var(--text-muted); }
+
+/* heatmap */
+#heatChart text { font-weight: 800; }
+#heatChart .cell-label { font-size: 10px; font-weight: 900; pointer-events: none; }
 
 /* enrollment pipeline */
 .pipeline-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }

@@ -36,6 +36,9 @@ function nowMinutesInTz(tz) {
   }).formatToParts(new Date());
   const h = Number(parts.find((p) => p.type === 'hour').value) % 24;
   const m = Number(parts.find((p) => p.type === 'minute').value);
+  // Demo mode: MOCK_HOUR previews a busy afternoon at any real time of day
+  // (the mock client stamps its check-ins with the same hour).
+  if (process.env.MOCK_HOUR) return Number(process.env.MOCK_HOUR) * 60 + m;
   return h * 60 + m;
 }
 
@@ -144,6 +147,25 @@ function understaffedMinutes(studentsToday, staffToday, nowMin) {
   return bad;
 }
 
+// Students and instructors on the floor every 15 minutes from 9:00 up to
+// now: the raw material for the staffing coverage timeline.
+const COVERAGE_START = 9 * 60;
+const COVERAGE_END = 21 * 60;
+function coverageToday(studentsToday, staffToday, nowMin) {
+  const ds = new Int16Array(1442);
+  const de = new Int16Array(1442);
+  for (const [a, b] of intervals(studentsToday, nowMin)) { ds[a] += 1; ds[b] -= 1; }
+  for (const [a, b] of intervals(staffToday, nowMin)) { de[a] += 1; de[b] -= 1; }
+  const out = [];
+  let st = 0; let em = 0;
+  const last = Math.min(COVERAGE_END, nowMin);
+  for (let m = 0; m <= last; m++) {
+    st += ds[m]; em += de[m];
+    if (m >= COVERAGE_START && m % 15 === 0) out.push({ t: m, s: st, e: em });
+  }
+  return out;
+}
+
 // Minutes each instructor has been in today (by name).
 function staffMinutesToday(staffToday, nowMin) {
   const out = {};
@@ -189,6 +211,7 @@ function computeCenterSnapshot(center, studentRows, employeeRows) {
     ratioNow: staffIn.length ? Math.round((checkedIn.length / staffIn.length) * 10) / 10 : null,
     ratioLevel: ratioLevel(checkedIn.length, staffIn.length),
     understaffedToday: understaffedMinutes(visitedToday, staffToday, nowMin),
+    coverageToday: coverageToday(visitedToday, staffToday, nowMin),
     staffMinutesToday: staffMinutesToday(staffToday, nowMin),
     inNow: checkedIn.map((s) => ({
       name: s.name,
@@ -215,6 +238,7 @@ module.exports = {
   peakConcurrent,
   ratioLevel,
   understaffedMinutes,
+  coverageToday,
   staffMinutesToday,
   computeCenterSnapshot,
 };

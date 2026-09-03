@@ -147,6 +147,12 @@ class MockRadiusClient {
       expectedMonthly: Math.round((nMembers - holds) * (280 + rand() * 80)),
       packageStudents: 3 + Math.floor(rand() * 6),
       packageValue: Math.round((3 + rand() * 6) * 640),
+      monthly: Array.from({ length: 12 }, (_, i) => {
+        const m = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() - (11 - i), 1));
+        const n = i === 11 ? 1 + Math.floor(rand() * 4) : 2 + Math.floor(rand() * 9);
+        return { month: m.toISOString().slice(0, 7), enrolled: n, collected: n * (380 + Math.floor(rand() * 120)) };
+      }),
+      referrals: { referred: 2 + Math.floor(rand() * 8), total: 30 + Math.floor(rand() * 60) },
       pipeline: {
         newLeads: 3 + Math.floor(rand() * 12), inProgress: 2 + Math.floor(rand() * 8), openTotal: 20 + Math.floor(rand() * 60), stale90: 10 + Math.floor(rand() * 40),
         enrolledThisMonth: 2 + Math.floor(rand() * 7), enrolledLastMonth: 3 + Math.floor(rand() * 8),
