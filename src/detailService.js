@@ -172,6 +172,37 @@ function pipelineFor(rows, center, today) {
   return out;
 }
 
+// Completed opportunities per month for the last 12 months (count + amount
+// collected at sign-up), plus how many of the last year's opportunities
+// carried a parent referral - the only source field Radius fills in.
+function monthKeys(today, n = 12) {
+  const d = new Date(Date.parse(today + 'T00:00:00Z'));
+  d.setUTCDate(1);
+  const keys = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1));
+    keys.push(m.toISOString().slice(0, 7));
+  }
+  return keys;
+}
+function monthlyEnrollments(rows, center, today) {
+  const keys = monthKeys(today);
+  const byMonth = Object.fromEntries(keys.map((k) => [k, { month: k, enrolled: 0, collected: 0 }]));
+  const referrals = { referred: 0, total: 0 };
+  for (const r of forCenterRows(rows, center)) {
+    const opened = normalizeDateString(r.OpenDateString || r.CreatedDateString);
+    if (opened && dayDiff(today, opened) <= 365) {
+      referrals.total++;
+      if (r.ReferralAccountId) referrals.referred++;
+    }
+    if (String(r.Status) !== 'Completed') continue;
+    const closed = normalizeDateString(r.CloseDateString);
+    const k = closed && closed.slice(0, 7);
+    if (k && byMonth[k]) { byMonth[k].enrolled++; byMonth[k].collected += Number(r.TodaysTotal) || 0; }
+  }
+  return { monthly: keys.map((k) => ({ ...byMonth[k], collected: Math.round(byMonth[k].collected) })), referrals };
+}
+
 function combineDetails(list, scopeName) {
   const sum = (k) => list.reduce((a, d) => a + (d[k] || 0), 0);
   const memberCount = sum('memberCount');
@@ -221,6 +252,15 @@ function combineDetails(list, scopeName) {
       for (const [k, v] of Object.entries(d.pipeline || {})) acc[k] = (acc[k] || 0) + v;
       return acc;
     }, {}),
+    monthly: (list[0] && list[0].monthly ? list[0].monthly : []).map((m, i) => ({
+      month: m.month,
+      enrolled: list.reduce((a, d) => a + ((d.monthly || [])[i]?.enrolled || 0), 0),
+      collected: list.reduce((a, d) => a + ((d.monthly || [])[i]?.collected || 0), 0),
+    })),
+    referrals: {
+      referred: list.reduce((a, d) => a + ((d.referrals || {}).referred || 0), 0),
+      total: list.reduce((a, d) => a + ((d.referrals || {}).total || 0), 0),
+    },
     byCenter: list.map((d) => ({
       id: d.id, name: d.name, enrolled: d.enrolled, active: d.active, holds: d.holds,
       expectedMonthly: d.expectedMonthly || 0, packageStudents: d.packageStudents || 0, expiring: (d.expiring || []).length,
@@ -291,6 +331,7 @@ class CenterDetailProvider {
     const detail = computeCenterDetail(center, schoolRows, attendanceRows, geo, { holdStartByStudent, enrolledIds: enrolledIdsFor(enrollRows, center) });
     Object.assign(detail, enrollmentExtras(enrollRows, center, today));
     detail.pipeline = pipelineFor(oppRows, center, today);
+    Object.assign(detail, monthlyEnrollments(oppRows, center, today));
     const pinsPending = await attachCenterPins([center], [detail], [hint], [zipAnchor(zips, geo)]);
     detail.geocodePending = geo.remaining + pinsPending;
     detail.scope = center.name;
@@ -327,6 +368,7 @@ class CenterDetailProvider {
       const d = computeCenterDetail(c, schoolRows, atts[i], geo, { holdStartByStudent: activeHoldStarts(holdRows, today), enrolledIds: enrolledIdsFor(enrollRows, c) });
       Object.assign(d, enrollmentExtras(enrollRows, c, today));
       d.pipeline = pipelineFor(oppRows, c, today);
+      Object.assign(d, monthlyEnrollments(oppRows, c, today));
       return d;
     });
     const pinsPending = await attachCenterPins(centers, details, hints, zipLists.map((z) => zipAnchor(z, geo)));

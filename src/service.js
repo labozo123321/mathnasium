@@ -100,6 +100,7 @@ class DashboardService {
           ratio: s.ratioNow ?? null,
           ratioLevel: s.ratioLevel || null,
           understaffedToday: s.understaffedToday ?? null,
+          coverage: s.coverageToday || [],
           ...centerWeekStats(this.historyCache || {}, c.id, todayInTz(c.tz)),
           updatedAt: s.updatedAt || null,
           error: s.error || null,

@@ -40,6 +40,13 @@ centers**; use the top filter to focus one center):
   is red) and minutes understaffed today.
 - **Instructor hours** - hours per instructor over the last 7 days, from
   employee check-ins.
+- **Staffing coverage today** - per center, students on the floor through
+  the day with the instructor count over it and red bands where the ratio
+  went bad.
+- **Busiest hours by weekday** - a heatmap of average arrivals per hour for
+  each weekday, built from the trend history, for planning schedules.
+- **New enrollments by month** - the last 12 months, with the amount
+  collected at sign-up, and the parent-referral share of opportunities.
 - **Weekly digest** - the "Weekly digest" button opens one page with every
   center's week; with Resend configured (see below) it is emailed every
   Monday morning.
