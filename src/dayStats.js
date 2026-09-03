@@ -166,13 +166,16 @@ function coverageToday(studentsToday, staffToday, nowMin) {
   return out;
 }
 
-// Minutes each instructor has been in today (by name).
+// Minutes each instructor has been in today, keyed by employee id (two
+// instructors can share a name; ids don't collide). The name rides along for
+// display only.
 function staffMinutesToday(staffToday, nowMin) {
   const out = {};
   for (const e of staffToday) {
+    const id = String(e.id ?? e.name ?? 'unknown');
     for (const [a, b] of intervals([e], nowMin)) {
-      const name = e.name || `#${e.id}`;
-      out[name] = (out[name] || 0) + (b - a);
+      const rec = out[id] || (out[id] = { name: e.name || `#${id}`, min: 0 });
+      rec.min += b - a;
     }
   }
   return out;

@@ -123,6 +123,9 @@ takes effect after a redeploy: Deployments → ⋯ on the latest → Redeploy):
   history across redeploys and restarts. The typical-day baselines,
   week-over-week numbers and instructor hours all read from this history,
   so it matters more now.
+- `SESSION_SECRET` - a long random string. It signs login cookies and
+  encrypts any Radius login typed into the page. Set it once; changing it
+  logs everyone out.
 - `RESEND_API_KEY` + `DIGEST_TO` (and optionally `DIGEST_FROM`,
   `DASHBOARD_URL`) - emails the weekly digest every Monday at 13:00 UTC via
   [Resend](https://resend.com) (free tier). Set `CRON_SECRET` too so only
@@ -145,7 +148,14 @@ How the Vercel version differs from running locally:
   consecutive failures) - point an uptime monitor at it. The dashboard shows
   a red banner if two syncs in a row fail and an amber one if data is stale.
 - Logins are rate-limited: 8 wrong passwords from one address locks it out
-  for 15 minutes.
+  for 15 minutes. With Upstash configured the counter is shared across all
+  serverless instances (without it, each instance counts separately).
+- The login cookie carries its own timestamp, expires after 30 days, and is
+  invalidated the moment you change `DASHBOARD_PASSWORD`.
+- A Radius login entered in the page is stored **encrypted** (AES-256-GCM)
+  in that browser's cookie, never in readable form. Set `SESSION_SECRET` to
+  a long random string so the encryption key does not depend on the
+  dashboard password.
 - On Vercel, while the default password (1234) is in use the dashboard
   shows a persistent warning. It lists student names - set a real
   `DASHBOARD_PASSWORD`.
@@ -166,6 +176,18 @@ How the Vercel version differs from running locally:
   it.
 - If Radius changes its login flow or endpoints, `src/radiusClient.js` is
   the only file that talks to it.
+
+## Running the tests
+
+```bash
+npm test
+```
+
+Covers the logic where a silent mistake would surface as a wrong number:
+attendance-time parsing, peak concurrency, the staffing thresholds and
+understaffed-minute sweep, history merging, the weekday baselines, hold-date
+selection, and the auth/credential crypto. No dependencies - it uses Node's
+built-in test runner.
 
 ## Configuration
 
