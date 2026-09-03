@@ -8,7 +8,7 @@ const path = require('path');
 const {
   tzForCenter, todayInTz, normalizeDateString, timeToMinutes, computeCenterSnapshot,
 } = require('./dayStats');
-const { mergeDayStats, trendsFromHistory } = require('./history');
+const { mergeDayStats, trendsFromHistory, centerWeekStats, staffHours } = require('./history');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
@@ -74,6 +74,10 @@ class Store {
           inNow: l.inNow || [],
           staffNow: l.staffNow || [],
           byHourToday: this.history[todayInTz(c.tz)]?.[c.id]?.byHour || {},
+          ratio: l.ratioNow ?? null,
+          ratioLevel: l.ratioLevel || null,
+          understaffedToday: l.understaffedToday ?? null,
+          ...centerWeekStats(this.history, c.id, todayInTz(c.tz)),
           updatedAt: l.updatedAt || null,
           error: l.error || null,
         };
@@ -88,6 +92,12 @@ class Store {
 
   trends(days = 30, centerId = null) {
     return trendsFromHistory(this.history, days, centerId);
+  }
+
+  staffHours(centerId = null, days = 7) {
+    const centers = centerId ? this.centers.filter((c) => c.id === Number(centerId)) : this.centers;
+    const today = todayInTz(centers[0] ? centers[0].tz : 'America/New_York');
+    return staffHours(this.history, centers, today, days);
   }
 }
 

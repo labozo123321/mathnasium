@@ -27,6 +27,12 @@ const CENTER_GEO = {
 const MOCK_SCHOOLS = ['Lincoln Elementary', 'Washington Middle', 'Jefferson Elementary',
   'Roosevelt Middle', 'Kennedy Elementary', 'Madison High', 'Hamilton Elementary'];
 
+// Instructor names are deterministic per center so today's check-ins and the
+// seeded history describe the same people.
+function staffName(centerId, i) {
+  return `${FIRST[(centerId * 7 + i * 3) % FIRST.length]} ${LAST[(centerId * 11 + i * 5) % LAST.length]}`;
+}
+
 // deterministic per-seed pseudo-random (mulberry32 - nearby seeds diverge)
 function rng(seed) {
   let a = seed >>> 0;
@@ -129,6 +135,23 @@ class MockRadiusClient {
         zip, count, lat: zipGeo[zip][0], lng: zipGeo[zip][1],
       })).sort((a, b) => b.count - a.count),
       centerPins: [{ id: center.id, name: center.name, lat: clat, lng: clng, approx: false, members: nMembers }],
+      expiring: Array.from({ length: 4 + Math.floor(rand() * 5) }, (_, i) => {
+        const daysLeft = Math.floor(rand() * 31);
+        const end = new Date(Date.now() + daysLeft * 86400000).toISOString().slice(0, 10);
+        return {
+          name: `${FIRST[Math.floor(rand() * FIRST.length)]} ${LAST[Math.floor(rand() * LAST.length)]}`,
+          center: center.name, plan: TYPES[i % TYPES.length], endDate: end, daysLeft,
+          recurring: rand() < 0.5, sessionsLeft: Math.floor(rand() * 8), monthly: 250 + Math.floor(rand() * 200),
+        };
+      }).sort((a, b) => a.daysLeft - b.daysLeft),
+      expectedMonthly: Math.round((nMembers - holds) * (280 + rand() * 80)),
+      packageStudents: 3 + Math.floor(rand() * 6),
+      packageValue: Math.round((3 + rand() * 6) * 640),
+      pipeline: {
+        newLeads: 3 + Math.floor(rand() * 12), inProgress: 2 + Math.floor(rand() * 8), openTotal: 20 + Math.floor(rand() * 60), stale90: 10 + Math.floor(rand() * 40),
+        enrolledThisMonth: 2 + Math.floor(rand() * 7), enrolledLastMonth: 3 + Math.floor(rand() * 8),
+        collectedThisMonth: Math.round((2 + rand() * 6) * 420), collectedLastMonth: Math.round((3 + rand() * 8) * 420),
+      },
     };
   }
 
@@ -173,7 +196,7 @@ class MockRadiusClient {
           ...base,
         });
       } else {
-        rows.push({ EmployeeId: centerId * 100 + i, EmployeeName: name, ...base });
+        rows.push({ EmployeeId: centerId * 100 + i, EmployeeName: staffName(centerId, i), ...base });
       }
     }
     return rows;
@@ -186,7 +209,7 @@ class MockRadiusClient {
 
   async getEmployeeAttendance(centerId) {
     const center = CENTERS.find((c) => c.CenterId === centerId) || { CenterId: centerId, CenterName: '' };
-    return this.#rows(center, 8, false);
+    return this.#rows(center, 14, false);
   }
 }
 
@@ -204,7 +227,7 @@ function seedHistory(store) {
     for (const c of CENTERS) {
       const rand = rng(c.CenterId * 31 + back);
       const scale = closed ? 0 : dow === 6 ? 0.5 : 1;
-      const visits = Math.round((18 + rand() * 25) * scale);
+      const visits = Math.round((44 + rand() * 30) * scale);
       const byHour = {};
       let left = visits;
       for (const h of [15, 16, 17, 18, 19]) {
@@ -213,11 +236,15 @@ function seedHistory(store) {
         left -= n;
         if (left <= 0) break;
       }
+      const staffMin = {};
+      if (!closed) for (let i = 0; i < 5; i++) if (rand() < 0.8) staffMin[staffName(c.CenterId, i)] = 150 + Math.floor(rand() * 200);
       day[c.CenterId] = {
         visits,
         peak: Math.round(visits * 0.4),
         staffPeak: closed ? 0 : 3 + Math.floor(rand() * 4),
         byHour,
+        understaffed: closed ? 0 : Math.floor(rand() * 60),
+        staffMin,
       };
     }
     store.history[key] = day;

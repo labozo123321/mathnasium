@@ -104,6 +104,58 @@ function peakConcurrent(rows, nowMin) {
   return max;
 }
 
+// Staffing: Mathnasium runs small-group instruction, so more than about
+// four students per instructor is a stretch and more than six (or students
+// with nobody on the floor) is a problem.
+const RATIO_OK = 4;
+const RATIO_BAD = 6;
+function ratioLevel(students, staff) {
+  if (!students) return 'idle';
+  if (!staff) return 'bad';
+  const r = students / staff;
+  return r <= RATIO_OK ? 'ok' : r <= RATIO_BAD ? 'warn' : 'bad';
+}
+
+// [start, end) minute intervals for today's rows.
+function intervals(rows, nowMin) {
+  const out = [];
+  for (const r of rows) {
+    if (r.arrivalMin == null) continue;
+    const end = r.checkedIn
+      ? nowMin
+      : (r.departureMin != null && r.departureMin >= r.arrivalMin ? r.departureMin : r.arrivalMin + 60);
+    if (end > r.arrivalMin) out.push([r.arrivalMin, Math.min(end, 1440)]);
+  }
+  return out;
+}
+
+// Minutes so far today with students on the floor and either no instructor
+// checked in or more than RATIO_BAD students per instructor.
+function understaffedMinutes(studentsToday, staffToday, nowMin) {
+  const ds = new Int16Array(1442);
+  const de = new Int16Array(1442);
+  for (const [a, b] of intervals(studentsToday, nowMin)) { ds[a] += 1; ds[b] -= 1; }
+  for (const [a, b] of intervals(staffToday, nowMin)) { de[a] += 1; de[b] -= 1; }
+  let st = 0; let em = 0; let bad = 0;
+  for (let m = 0; m < 1440; m++) {
+    st += ds[m]; em += de[m];
+    if (st > 0 && ratioLevel(st, em) === 'bad') bad++;
+  }
+  return bad;
+}
+
+// Minutes each instructor has been in today (by name).
+function staffMinutesToday(staffToday, nowMin) {
+  const out = {};
+  for (const e of staffToday) {
+    for (const [a, b] of intervals([e], nowMin)) {
+      const name = e.name || `#${e.id}`;
+      out[name] = (out[name] || 0) + (b - a);
+    }
+  }
+  return out;
+}
+
 // One center's full snapshot from raw Radius rows.
 function computeCenterSnapshot(center, studentRows, employeeRows) {
   const today = todayInTz(center.tz);
@@ -134,6 +186,10 @@ function computeCenterSnapshot(center, studentRows, employeeRows) {
     byHour,
     peakToday: peakConcurrent(visitedToday, nowMin),
     staffPeakToday: peakConcurrent(staffToday, nowMin),
+    ratioNow: staffIn.length ? Math.round((checkedIn.length / staffIn.length) * 10) / 10 : null,
+    ratioLevel: ratioLevel(checkedIn.length, staffIn.length),
+    understaffedToday: understaffedMinutes(visitedToday, staffToday, nowMin),
+    staffMinutesToday: staffMinutesToday(staffToday, nowMin),
     inNow: checkedIn.map((s) => ({
       name: s.name,
       arrival: s.arrival,
@@ -157,5 +213,8 @@ module.exports = {
   normalizeStudents,
   normalizeEmployees,
   peakConcurrent,
+  ratioLevel,
+  understaffedMinutes,
+  staffMinutesToday,
   computeCenterSnapshot,
 };

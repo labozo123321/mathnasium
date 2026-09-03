@@ -14,6 +14,7 @@ const { RadiusClient } = require('../src/radiusClient');
 const { MockRadiusClient } = require('../src/mock');
 const { DashboardService } = require('../src/service');
 const { CenterDetailProvider } = require('../src/detailService');
+const { buildDigest, sendDigest, digestConfigured } = require('../src/digest');
 const {
   isAuthenticated, checkPassword, authCookieHeader, readJsonBody, parseCookies,
   loginAllowed, loginFailed, loginSucceeded,
@@ -63,6 +64,15 @@ function resolveService(req) {
   return { mock: true, service: serviceFor('mock', () => new MockRadiusClient(), 'mock') };
 }
 
+async function makeDigest(service, req) {
+  await service.refresh();
+  service.detailProvider = service.detailProvider || new CenterDetailProvider(service.client);
+  const all = await service.detailProvider.detailAll(service.centers);
+  const host = req.headers && req.headers.host;
+  const url = process.env.DASHBOARD_URL || (host ? `https://${host}` : '');
+  return buildDigest({ overview: service.overview(), all, hours: service.staffHours(null), dashboardUrl: url });
+}
+
 function json(res, status, body) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -91,6 +101,22 @@ module.exports = async (req, res) => {
       const { service } = resolveService({ headers: {} });
       await service.refresh();
       return json(res, 200, { ok: true, lastSync: service.lastSync });
+    } catch (e) {
+      return json(res, 502, { ok: false, error: e.message });
+    }
+  }
+
+  // Monday digest (Vercel cron). Sends only when Resend is configured; honors
+  // CRON_SECRET when one is set so strangers can't trigger extra emails.
+  if (path === '/api/digest-cron') {
+    if (process.env.CRON_SECRET && req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+      return json(res, 401, { error: 'unauthorized' });
+    }
+    if (!digestConfigured()) return json(res, 200, { ok: false, skipped: 'RESEND_API_KEY / DIGEST_TO not set' });
+    try {
+      const { service } = resolveService({ headers: {} });
+      const r = await sendDigest(await makeDigest(service, req));
+      return json(res, r.ok ? 200 : 502, r);
     } catch (e) {
       return json(res, 502, { ok: false, error: e.message });
     }
@@ -161,6 +187,22 @@ module.exports = async (req, res) => {
       const days = Math.min(Number(url.searchParams.get('days')) || 30, 120);
       const center = url.searchParams.get('center') ? Number(url.searchParams.get('center')) : null;
       return json(res, 200, { days: service.trends(days, center) });
+    }
+    if (path === '/api/staff-hours') {
+      await service.refresh();
+      const center = url.searchParams.get('center') ? Number(url.searchParams.get('center')) : null;
+      return json(res, 200, { rows: service.staffHours(center) });
+    }
+    if (path === '/api/digest') {
+      const d = await makeDigest(service, req);
+      if (url.searchParams.get('send') === '1') {
+        const r = await sendDigest(d);
+        return json(res, r.ok ? 200 : 502, { ...r, configured: digestConfigured() });
+      }
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      return res.end(d.html);
     }
     if (path === '/api/center/all') {
       await service.refresh();

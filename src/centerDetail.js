@@ -101,6 +101,26 @@ function computeCenterDetail(center, schoolRows, attendanceRows, geo, extras = {
   const mem = enrolled.concat(holds);
   const active = enrolled.filter((r) => { const d = daysSince(r); return d != null && d <= 30; });
 
+  // Headline counts: the enrollment report lists every student with a live
+  // enrollment (the school report only covers students with a school on
+  // file), so when the caller supplies those ids they define enrolled /
+  // active / on hold; the lists below still come from the school report.
+  const counts = { enrolled: enrolled.length, active: active.length, holds: holds.length, members: mem.length };
+  const enrolledIds = extras.enrolledIds;
+  if (enrolledIds && enrolledIds.size) {
+    const holdStarts = extras.holdStartByStudent || new Map();
+    const onHold = [...enrolledIds].filter((id) => holdStarts.has(id));
+    const activeIds = [...enrolledIds].filter((id) => {
+      if (holdStarts.has(id)) return false;
+      const iso = lastSeen.get(id);
+      return iso && daysBetween(today, iso) <= 30;
+    });
+    counts.members = enrolledIds.size;
+    counts.holds = onHold.length;
+    counts.enrolled = enrolledIds.size - onHold.length;
+    counts.active = activeIds.length;
+  }
+
   const tenures = mem.map((r) => monthsSince(r.sSignupDate || r.SignupDate, today)).filter((x) => x != null);
   const avgTenureMonths = tenures.length ? tenures.reduce((a, b) => a + b, 0) / tenures.length : null;
 
@@ -176,10 +196,10 @@ function computeCenterDetail(center, schoolRows, attendanceRows, geo, extras = {
   return {
     id: center.id,
     name: center.name,
-    enrolled: enrolled.length,
-    active: active.length,
-    holds: holds.length,
-    memberCount: mem.length,
+    enrolled: counts.enrolled,
+    active: counts.active,
+    holds: counts.holds,
+    memberCount: counts.members,
     avgTenureMonths,
     belowAverage,
     runningOut,

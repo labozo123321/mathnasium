@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mathnasium Live</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23EF3E33'/%3E%3Ctext x='16' y='23' font-size='19' font-weight='900' font-family='system-ui' fill='white' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+<meta name="theme-color" content="#EF3E33">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Mathnasium">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap">
@@ -54,6 +60,7 @@
     <div class="topbar-left">
       <span id="modeBadge" class="badge" hidden></span>
       <span id="lastSync" class="muted"></span>
+      <a class="ghost-btn" id="digestLink" href="/api/digest" target="_blank" rel="noopener" title="This week's numbers for every center, as one page">Weekly digest</a>
     </div>
     <div class="filters" role="group" aria-label="Filters">
       <label class="filter">
@@ -102,10 +109,18 @@
         </figure>
         <div class="detail-side">
           <figure class="card queue-card">
-            <figcaption><h2>Needs attention</h2></figcaption>
+            <figcaption><h2>Needs attention</h2><button class="ghost-btn" id="queueExport" type="button" title="Download this list as a spreadsheet">CSV</button></figcaption>
             <div class="queue-tabs" id="queueTabs" role="tablist"></div>
             <div class="scroll-y" id="queueWrap"></div>
             <p class="empty muted" id="queueEmpty" hidden></p>
+          </figure>
+          <figure class="card pipeline-card">
+            <figcaption><h2>Enrollment pipeline</h2><span class="muted" id="pipelineNote"></span></figcaption>
+            <div class="pipeline-stats" id="pipelineStats"></div>
+            <div class="scroll-x" id="pipelineWrap" hidden><table class="data-table pipeline-table" id="pipelineTable">
+              <thead><tr><th>Center</th><th title="opened in the last 30 days">New 30d</th><th title="all open leads">Open</th><th>Enrolled mo.</th><th>Expiring</th><th>$ / mo</th></tr></thead>
+              <tbody></tbody>
+            </table></div>
           </figure>
           <figure class="card">
             <figcaption><h2>Top schools</h2><span class="muted">leaderboard</span></figcaption>
@@ -139,6 +154,14 @@
           <tbody></tbody>
         </table></div>
         <p class="empty muted" id="inNowEmpty" hidden>Nobody is checked in right now.</p>
+      </figure>
+      <figure class="card span-2" id="staffCard">
+        <figcaption><h2>Instructor hours · last 7 days</h2><span class="muted" id="staffNote"></span></figcaption>
+        <div class="scroll-x"><table class="data-table" id="staffTable">
+          <thead><tr><th>Instructor</th><th>Center</th><th>Hours</th><th>Days</th><th>Today</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <p class="empty muted" id="staffEmpty" hidden>No instructor check-ins recorded yet. Hours build up while the app runs.</p>
       </figure>
     </section>
 

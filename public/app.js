@@ -19,6 +19,7 @@
     layers: null,       // { schools, zips } layer groups
     basemap: 'streets', // 'streets' | 'satellite'
     queueTab: 'runningOut',
+    staffHours: [],
   };
   try { state.basemap = localStorage.getItem('mn-basemap') || 'streets'; } catch (e) { /* private mode */ }
 
@@ -45,6 +46,8 @@
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     hourglass: '<path d="M6 2h12M6 22h12M7 2c0 6 5 6 5 10s-5 4-5 10M17 2c0 6-5 6-5 10s5 4 5 10"/>',
     down: '<path d="M3 7l6 6 4-4 8 8M14 17h7v-7"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    dollar: '<path d="M12 2v20M17 6.5c-1-1.5-2.5-2-5-2s-4.5 1-4.5 3 1.5 3 4.5 3.5 5 1.5 5 3.5-2 3.5-5 3.5-4.5-1-5.5-2.5"/>',
   };
   function icon(name) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -125,6 +128,14 @@
     const q = new URLSearchParams({ days: state.days });
     if (state.center) q.set('center', state.center);
     state.trends = (await apiFetch('/api/trends?' + q)).days;
+  }
+  async function loadStaffHours() {
+    try {
+      state.staffHours = (await apiFetch('/api/staff-hours' + (state.center ? '?center=' + state.center : ''))).rows || [];
+    } catch (e) {
+      if (e && e.auth) throw e;
+      state.staffHours = [];
+    }
   }
   async function loadRosters() {
     if (!state.overview) return;
@@ -231,10 +242,21 @@
         ]),
         h('div', { class: 'row' }, [
           h('span', { text: `Staff: ${c.staffIn == null ? '—' : c.staffIn}` }),
+          h('span', {
+            class: 'ratio ' + (c.ratioLevel || 'idle'),
+            title: c.checkedIn && c.staffIn ? `${c.ratio} students per instructor right now` : 'students per instructor right now',
+            text: c.staffIn == null ? '—' : !c.checkedIn ? 'quiet' : !c.staffIn ? 'no staff' : `${c.ratio}:1`,
+          }),
+        ]),
+        h('div', { class: 'row' }, [
           h('span', { text: `Today: ${c.visitsToday == null ? '—' : c.visitsToday}` }),
+          c.typicalVisits != null
+            ? h('span', { class: 'typical', text: `typical ${(c.weekday || '').slice(0, 3)}: ${c.typicalVisits}`, title: 'average for this weekday over the last 8 weeks' })
+            : h('span', { class: 'typical', text: 'typical: —', title: 'needs a few weeks of history' }),
         ]),
         sparkSvg(c.byHourToday || {}),
       ]);
+      if (c.understaffedToday > 0) card.appendChild(h('div', { class: 'warn-line', text: `${c.understaffedToday} min understaffed today` }));
       if (c.error) card.appendChild(h('div', { class: 'err', text: 'sync issue: ' + c.error }));
       return card;
     }));
@@ -451,6 +473,11 @@
     const anyLive = centers.some((c) => c.checkedIn != null);
     const inNow = anyLive ? sumOv((c) => c.checkedIn) : null;
     const visitsToday = anyLive ? sumOv((c) => c.visitsToday) : null;
+    const last7 = sumOv((c) => c.last7Visits);
+    const typical = centers.some((c) => c.typicalVisits != null) ? sumOv((c) => c.typicalVisits) : null;
+    const weekday = (centers[0] && centers[0].weekday) || '';
+    const vps = d.active && last7 ? Math.round((last7 / d.active) * 10) / 10 : null;
+    const todayDelta = typical && visitsToday != null ? Math.round(((visitsToday - typical) / typical) * 100) : null;
 
     const pct = (a, b) => (a != null && b > 0 ? Math.max(0, Math.min(100, Math.round((a / b) * 100))) : null);
     const activePct = pct(d.active, d.enrolled);
@@ -459,25 +486,34 @@
     const tiles = [
       { tone: 't-blue', icon: 'users', label: 'Enrolled', value: d.enrolled, sub: 'students enrolled now' },
       { tone: 't-green', icon: 'bolt', label: 'Active', value: d.active,
-        sub: activePct == null ? 'attended in last 30 days' : `${activePct}% of enrolled, last 30 days`, bar: activePct },
+        sub: (activePct == null ? 'attended in last 30 days' : `${activePct}% of enrolled`) + (vps != null ? ` · ${vps} visits/student/wk` : ''), bar: activePct },
       { tone: 't-orange', icon: 'pause', label: 'On hold', value: d.holds,
         sub: holdPct == null ? 'frozen memberships' : `${holdPct}% of enrolled frozen`, bar: holdPct },
       { tone: 't-red', icon: 'flame', label: 'Visits today', value: visitsToday ?? '—',
-        sub: `${inNow ?? '—'} in session now`, bar: nowPct },
+        sub: typical != null ? `typical ${weekday.slice(0, 3)}: ${typical} · ${inNow ?? '—'} in now` : `${inNow ?? '—'} in session now`,
+        delta: todayDelta, bar: typical ? Math.min(100, Math.round(((visitsToday || 0) / typical) * 100)) : nowPct },
+      { tone: 't-navy', icon: 'dollar', label: 'Monthly recurring', value: d.expectedMonthly != null ? '$' + Math.round(d.expectedMonthly).toLocaleString() : '—',
+        sub: (d.expectedMonthly ? `$${Math.round(d.expectedMonthly / Math.max(1, (d.enrollmentCount || d.enrolled || 0) - (d.packageStudents || 0)))} per member` : 'from active memberships')
+          + (d.packageStudents ? ` · ${d.packageStudents} on packages` : '') },
       { tone: 't-purple', icon: 'clock', label: 'Avg stay', value: fmtMonths(d.avgTenureMonths), sub: 'running average since sign-up' },
     ];
     $('#detailKpis').replaceChildren(...tiles.map((t) => h('div', { class: 'tile ' + t.tone }, [
       h('div', { class: 'tile-icon' }, icon(t.icon)),
       h('div', { class: 'tile-body' }, [
-        h('div', { class: 'value', text: String(t.value ?? '—') }),
+        h('div', { class: 'value' + (String(t.value ?? '').length > 6 ? ' long' : ''), text: String(t.value ?? '—') }),
         h('div', { class: 'label', text: t.label }),
-        h('div', { class: 'sub', text: t.sub }),
+        h('div', { class: 'sub' }, [
+          document.createTextNode(t.sub),
+          t.delta == null ? null : h('span', { class: 'delta ' + (t.delta >= 0 ? 'up' : 'down'), text: `${t.delta >= 0 ? '+' : ''}${t.delta}%`, title: 'today vs a typical ' + weekday }),
+        ]),
         t.bar == null ? null : h('div', { class: 'bar', role: 'progressbar', 'aria-valuenow': String(t.bar), 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-label': t.label },
           h('span', { style: `width:${t.bar}%` })),
       ]),
     ])));
 
     renderQueue(d, allScope);
+    renderPipeline(d, allScope);
+    renderStaff();
 
     // top schools
     const schools = d.schools || [];
@@ -715,6 +751,51 @@
     return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
 
+  // ---------- enrollment pipeline ----------
+  function renderPipeline(d, allScope) {
+    const p = d.pipeline || {};
+    const money = (n) => '$' + Math.round(n || 0).toLocaleString();
+    $('#pipelineStats').replaceChildren(...[
+      ['New leads', p.newLeads ?? 0, 't-blue', 'opened in the last 30 days'],
+      ['Open leads', p.openTotal ?? 0, 't-orange', `${p.inProgress ?? 0} in progress · ${p.stale90 ?? 0} older than 90 days`],
+      ['Enrolled this month', p.enrolledThisMonth ?? 0, 't-green', `${p.enrolledLastMonth ?? 0} last month`],
+      ['Collected at sign-up', money(p.collectedThisMonth), 't-navy', `this month · ${money(p.collectedLastMonth)} last month`],
+    ].map(([label, value, tone, sub]) => h('div', { class: 'pstat ' + tone }, [
+      h('div', { class: 'pvalue', text: String(value) }),
+      h('div', { class: 'plabel', text: label }),
+      h('div', { class: 'psub', text: sub }),
+    ])));
+    $('#pipelineNote').textContent = allScope ? 'all centers' : '';
+    const wrap = $('#pipelineWrap');
+    const rows = allScope ? (d.byCenter || []) : [];
+    wrap.hidden = rows.length === 0;
+    $('#pipelineTable tbody').replaceChildren(...rows.map((c) => h('tr', {}, [
+      h('td', { text: c.name }),
+      h('td', { class: 'num', text: String(c.newLeads ?? 0) }),
+      h('td', { class: 'num', text: String(c.openTotal ?? 0) }),
+      h('td', { class: 'num', text: String(c.enrolledThisMonth ?? 0) }),
+      h('td', { class: 'num', text: String(c.expiring ?? 0) }),
+      h('td', { class: 'num', text: money(c.expectedMonthly) }),
+    ])));
+  }
+
+  // ---------- instructor hours ----------
+  function renderStaff() {
+    const rows = state.staffHours || [];
+    const hrs = (m) => (Math.round((m / 60) * 10) / 10).toFixed(1);
+    $('#staffTable tbody').replaceChildren(...rows.slice(0, 60).map((r) => h('tr', {}, [
+      h('td', { text: r.name }),
+      h('td', { text: r.center }),
+      h('td', { class: 'num', text: hrs(r.minutes) }),
+      h('td', { class: 'num', text: String(r.days) }),
+      h('td', { class: 'num', text: r.todayMinutes ? hrs(r.todayMinutes) : '—' }),
+    ])));
+    $('#staffEmpty').hidden = rows.length > 0;
+    $('#staffTable').hidden = rows.length === 0;
+    const total = rows.reduce((a, r) => a + r.minutes, 0);
+    $('#staffNote').textContent = rows.length ? `${hrs(total)} h across ${rows.length} instructor${rows.length === 1 ? '' : 's'}` : '';
+  }
+
   // ---------- needs-attention queue ----------
   const QUEUE_TABS = [
     { key: 'runningOut', label: 'Running out', icon: 'hourglass', hint: '2 or fewer sessions left on their plan',
@@ -723,10 +804,12 @@
       empty: 'No students on hold.' },
     { key: 'belowAverage', label: 'Dropped', icon: 'down', hint: 'longer since their last visit than this center\'s average',
       empty: "Everyone's attendance is on track." },
+    { key: 'expiring', label: 'Expiring', icon: 'calendar', hint: 'memberships that end within 30 days',
+      empty: 'No memberships end in the next 30 days.' },
   ];
 
   function renderQueue(d, allScope) {
-    const lists = { runningOut: d.runningOut || [], holdsList: d.holdsList || [], belowAverage: d.belowAverage || [] };
+    const lists = { runningOut: d.runningOut || [], holdsList: d.holdsList || [], belowAverage: d.belowAverage || [], expiring: d.expiring || [] };
     if (!lists[state.queueTab]) state.queueTab = 'runningOut';
 
     $('#queueTabs').replaceChildren(...QUEUE_TABS.map((t) => h('button', {
@@ -756,6 +839,13 @@
         h('td', { class: 'num ' + (r.daysOnHold >= 30 ? 'flag' : ''),
           text: r.daysOnHold == null ? '—' : `${r.daysOnHold}d${r.exact ? '' : '*'}` }),
       ];
+    } else if (state.queueTab === 'expiring') {
+      cols.push('Plan', 'Ends', 'Left');
+      cell = (r) => [
+        h('td', {}, [h('span', { text: r.plan || '—' }), r.recurring ? h('span', { class: 'pill', text: 'auto-renews' }) : null]),
+        h('td', { class: 'num ' + (r.daysLeft <= 7 ? 'flag' : ''), text: r.daysLeft === 0 ? 'today' : `${r.daysLeft}d`, title: r.endDate }),
+        h('td', { class: 'num', text: r.sessionsLeft == null ? '—' : String(r.sessionsLeft) }),
+      ];
     } else {
       cols.push('School', 'Seen');
       cell = (r) => [
@@ -781,6 +871,20 @@
       empty.textContent = rows.length ? '* estimated from last visit (not in the Radius Holds report)' : tab.empty;
     }
   }
+
+  // Download the current queue tab as CSV (built from the rendered table).
+  $('#queueExport').addEventListener('click', () => {
+    const table = $('#queueWrap table');
+    if (!table) return;
+    const rows = [...table.querySelectorAll('tr')].map((tr) => [...tr.children].map((td) => td.textContent.trim()));
+    const csv = rows.map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const scope = state.center ? (state.detail && state.detail.name) || 'center' : 'all-centers';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `${state.queueTab}-${scope}-${new Date().toISOString().slice(0, 10)}.csv`.replace(/\s+/g, '-').toLowerCase();
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
 
   // ---------- alerts (sync health, default password) ----------
   function renderAlerts(o) {
@@ -965,7 +1069,7 @@
     if (detailLoading) return;
     detailLoading = true;
     clearTimeout(detailTimer);
-    loadDetail()
+    Promise.all([loadDetail(), loadStaffHours()])
       .then(() => {
         renderDetail();
         // While places are still being located, come back sooner so the map
