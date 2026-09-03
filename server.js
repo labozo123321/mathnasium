@@ -97,6 +97,29 @@ async function allCenters() {
   return list.map((c) => ({ ...c, tz: tzForCenter(c.name) }));
 }
 
+app.get('/api/staff-hours', (req, res) => {
+  res.json({ rows: store.staffHours(req.query.center ? Number(req.query.center) : null) });
+});
+
+const { buildDigest, sendDigest, digestConfigured } = require('./src/digest');
+async function makeDigest(req) {
+  const all = await detailProvider.detailAll(await allCenters());
+  const url = process.env.DASHBOARD_URL || `${req.protocol}://${req.get('host')}`;
+  return buildDigest({ overview: store.overview(), all, hours: store.staffHours(null), dashboardUrl: url });
+}
+app.get('/api/digest', async (req, res) => {
+  try {
+    const d = await makeDigest(req);
+    if (req.query.send === '1') {
+      const r = await sendDigest(d);
+      return res.status(r.ok ? 200 : 502).json({ ...r, configured: digestConfigured() });
+    }
+    res.type('html').send(d.html);
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 app.get('/api/center/all', async (req, res) => {
   try {
     res.json(await detailProvider.detailAll(await allCenters()));

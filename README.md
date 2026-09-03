@@ -14,7 +14,9 @@ A live dashboard for your Mathnasium centers, powered by your Radius
 The front page always leads with the **center overview** (defaults to **All
 centers**; use the top filter to focus one center):
 
-- **Enrolled / Active / On-hold** counts, **attendance today**, and
+- **Enrolled / Active / On-hold** counts (from Radius's enrollment and
+  holds reports, so every student with a live membership is counted),
+  **attendance today** with the typical count for that weekday, and
   **average length of stay** (a running average since sign-up)
 - **Attending less than usual** - enrolled students whose gap since their last
   visit is longer than the center's average, so you can follow up
@@ -23,6 +25,26 @@ centers**; use the top filter to focus one center):
   *On hold* (longest holds first, from Radius's Holds report; 30+ days is
   flagged), and *Attendance dropped* (longer since their last visit than the
   center's average). This is the "who do I talk to at pickup" list.
+- **Expected monthly revenue**, per center and overall, from Radius's
+  enrollment report, plus **expiring memberships** (a fourth Needs attention
+  tab: everything ending within 30 days, auto-renewing plans marked).
+- **Enrollment pipeline** - new leads, opportunities in progress (with how
+  many have sat open 14+ days), enrollments closed this month and last, and
+  the recurring revenue those added. In the all-centers view, a per-center
+  table.
+- **Is today normal?** - every center card and the Visits today tile show
+  the typical count for this weekday (average of the last 8 weeks) and the
+  difference; the Active tile shows visits per active student per week.
+- **Staffing light** - a green / amber / red students-per-instructor pill on
+  each center card (4:1 or better is green, over 6:1 or nobody on the floor
+  is red) and minutes understaffed today.
+- **Instructor hours** - hours per instructor over the last 7 days, from
+  employee check-ins.
+- **Weekly digest** - the "Weekly digest" button opens one page with every
+  center's week; with Resend configured (see below) it is emailed every
+  Monday morning.
+- **CSV export** of any Needs attention list, and **add to home screen** on
+  a phone so it opens like an app.
 - **A map of where students come from** - Duolingo-style "path nodes": a red
   **M** node for each center (its storefront when OpenStreetMap knows it,
   otherwise its town, drawn dashed), blue school nodes with the student count
@@ -91,7 +113,13 @@ takes effect after a redeploy: Deployments → ⋯ on the latest → Redeploy):
   server instead of per-browser; nobody has to type it into the page, and
   the daily history cron can record days even when nobody views.
 - **Storage → Create Database → Upstash Redis** (free) - keeps trend
-  history across redeploys and restarts.
+  history across redeploys and restarts. The typical-day baselines,
+  week-over-week numbers and instructor hours all read from this history,
+  so it matters more now.
+- `RESEND_API_KEY` + `DIGEST_TO` (and optionally `DIGEST_FROM`,
+  `DASHBOARD_URL`) - emails the weekly digest every Monday at 13:00 UTC via
+  [Resend](https://resend.com) (free tier). Set `CRON_SECRET` too so only
+  Vercel's cron can trigger it.
 
 How the Vercel version differs from running locally:
 
@@ -124,9 +152,11 @@ How the Vercel version differs from running locally:
 - The app binds to `127.0.0.1` (your machine only) by default. The dashboard
   shows student names, so think twice before exposing it on a network -
   if you must, put it behind a reverse proxy with authentication.
-- The account used here is a staff-level Radius profile: it can see check-in
-  and roster data. Center-management reports (enrollment pipeline, billing)
-  are not visible to this profile, so they are not on the dashboard.
+- The account used here is a staff-level Radius profile. Besides check-in
+  and roster data it can read the School, Holds and Enrollment reports and
+  the Enrollment Opportunity dashboard, which is where the revenue, expiring
+  and pipeline numbers come from. Invoices and payments are not visible to
+  it.
 - If Radius changes its login flow or endpoints, `src/radiusClient.js` is
   the only file that talks to it.
 

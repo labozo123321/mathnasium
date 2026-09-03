@@ -105,7 +105,11 @@ class RadiusClient {
   }
 
   // GET a JSON endpoint, re-authenticating once if the session has expired.
+  // Waits for any report flow in progress: Radius keeps one "current report"
+  // per session, and a quick read landing between a report page and its
+  // data call makes the report come back empty.
   async getJson(path, retried = false) {
+    await this.reportChain;
     if (!this.loggedIn) await this.login();
     const res = await this.fetchRaw(path, {
       headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json' },
@@ -174,9 +178,11 @@ class RadiusClient {
 
   // POST a Kendo DataSourceRequest grid once and return all rows. Radius grids
   // ignore paging when pageSize is large, so one call returns everything.
-  async #postGridOnce(path, pagePath) {
+  async #postGridOnce(path, pagePath, extra = {}) {
     const token = await this.#getToken(pagePath);
-    const body = `__RequestVerificationToken=${encodeURIComponent(token)}&sort=&page=1&pageSize=20000&group=&filter=`;
+    const params = new URLSearchParams({ __RequestVerificationToken: token, sort: '', page: '1', pageSize: '20000', group: '', filter: '' });
+    for (const [k, v] of Object.entries(extra)) if (v != null) params.set(k, String(v));
+    const body = params.toString();
     const res = await this.fetchRaw(path, {
       method: 'POST',
       headers: {
@@ -279,6 +285,35 @@ class RadiusClient {
       },
       () => this.#postJsonOnce('/Holds/HoldsReport_Read', '/Holds/HoldsReport', {
         delivery: null, start, end, centerId: null, holdStatus: '', ctrIds,
+      }),
+    );
+  }
+
+  // Every enrollment for the selected centers within a date window, for one
+  // status (2 pre-enrolled, 3 enrolled, 4 on hold, 5 inactive). Rows carry
+  // start/end dates, sessions remaining, membership type, expected monthly
+  // amount, hold counts and length of stay.
+  async getEnrollmentReport({ statusId = 3, start, end } = {}) {
+    const startD = start || new Date();
+    const endD = end || new Date(Date.now() + 366 * 86400000);
+    let ctrIds = '';
+    return this.#runReport(
+      async () => { await this.selectAllCenters(); ctrIds = this.centers.map((c) => c.id).join(','); },
+      () => this.#postGridOnce('/Enrollment/EnrollmentReport_Read', '/Enrollment/EnrollmentReport', {
+        centerId: '0', StartDate: startD.toUTCString(), EndDate: endD.toUTCString(), statusId: String(statusId),
+        membershipTypeList: '', delivery: '', schoolPartnership: '2', ctrIds,
+      }),
+    );
+  }
+
+  // Enrollment opportunities (the lead -> enrollment pipeline) for the
+  // selected centers; statusId selects the pipeline stage.
+  async getEnrollmentOpportunities({ statusId = '' } = {}) {
+    let ctrIds = '';
+    return this.#runReport(
+      async () => { await this.selectAllCenters(); ctrIds = this.centers.map((c) => c.id).join(','); },
+      () => this.#postGridOnce('/Enrollment/EnrollmentDashboard_ReadV2', '/Enrollment/EnrollmentOpportunityDashboard', {
+        statusId: String(statusId), centerId: '0', ctrIds,
       }),
     );
   }

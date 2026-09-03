@@ -79,6 +79,99 @@ async function attachCenterPins(centers, details, hints, anchors) {
   return res.remaining;
 }
 
+// --- enrollment report: expiring memberships + expected monthly revenue ------
+const dayDiff = (isoA, isoB) => Math.round((Date.parse(isoA + 'T00:00:00Z') - Date.parse(isoB + 'T00:00:00Z')) / 86400000);
+const forCenterRows = (rows, center) => rows.filter((r) =>
+  (r.CenterId != null && Number(r.CenterId) === Number(center.id))
+  || (r.CenterId == null && (r.CenterName || '').trim().toLowerCase() === center.name.toLowerCase()));
+
+const EXPIRING_DAYS = 30;
+// Distinct student ids with a live enrollment at this center.
+function enrolledIdsFor(rows, center) {
+  const ids = new Set();
+  for (const r of forCenterRows(rows, center)) if (r.StudentId != null) ids.add(Number(r.StudentId));
+  return ids;
+}
+// Radius lists a student's enrollment more than once (a "* " flagged copy
+// carries the expected amount for the report window, the plain copy the
+// contract). We keep one row per student: the recurring monthly amount is
+// the largest monthly figure on any of their rows; packages (not recurring)
+// are counted separately since their amount is a one-time price.
+const monthlyOf = (r) => Math.max(Number(r.Recurring_Monthly_Amount) || 0, Number(r.MonthlyPayment) || 0, r.Recurring ? Number(r.ExpectedMonthlyAmount) || 0 : 0);
+function enrollmentExtras(rows, center, today) {
+  const byStudent = new Map();
+  for (const r of forCenterRows(rows, center)) {
+    const key = r.StudentId ?? `${r.StudentName}|${r.EnrStartDateString}`;
+    const cur = byStudent.get(key);
+    if (!cur) { byStudent.set(key, { r, monthly: monthlyOf(r), pkg: !r.Recurring ? Number(r.ExpectedMonthlyAmount) || 0 : 0 }); continue; }
+    cur.monthly = Math.max(cur.monthly, monthlyOf(r));
+    cur.pkg = Math.max(cur.pkg, !r.Recurring ? Number(r.ExpectedMonthlyAmount) || 0 : 0);
+    if (r.Recurring && !cur.r.Recurring) cur.r = r; // prefer the recurring row for dates
+  }
+  const mine = [...byStudent.values()];
+  const expiring = [];
+  let expectedMonthly = 0;
+  let packageStudents = 0;
+  let packageValue = 0;
+  for (const { r, monthly, pkg } of mine) {
+    if (monthly > 0) expectedMonthly += monthly;
+    else if (pkg > 0) { packageStudents++; packageValue += pkg; }
+    const end = normalizeDateString(r.EnrEndDateString);
+    if (!end) continue;
+    const daysLeft = dayDiff(end, today);
+    if (daysLeft < 0 || daysLeft > EXPIRING_DAYS) continue;
+    expiring.push({
+      name: (r.StudentName || `${r.StudentFirstName || ''} ${r.StudentLastName || ''}`).trim() || '—',
+      center: center.name,
+      plan: r.MembershipTypeName || r.EnrollmentTypeName || null,
+      endDate: end,
+      daysLeft,
+      recurring: !!r.Recurring,
+      sessionsLeft: r.SessionsRemaining == null ? null : Number(r.SessionsRemaining),
+      monthly: monthly || pkg,
+    });
+  }
+  expiring.sort((a, b) => a.daysLeft - b.daysLeft);
+  return {
+    expiring, expectedMonthly: Math.round(expectedMonthly), enrollmentCount: mine.length,
+    packageStudents, packageValue: Math.round(packageValue),
+  };
+}
+
+// --- enrollment opportunities: the lead -> enrolled pipeline ----------------
+function pipelineFor(rows, center, today) {
+  const mine = forCenterRows(rows, center);
+  const month = today.slice(0, 7);
+  const lastMonthDate = new Date(Date.parse(today + 'T00:00:00Z'));
+  lastMonthDate.setUTCDate(1); lastMonthDate.setUTCMonth(lastMonthDate.getUTCMonth() - 1);
+  const lastMonth = lastMonthDate.toISOString().slice(0, 7);
+  // newLeads = opportunities opened in the last 30 days that are still open;
+  // openTotal / stale90 show the whole backlog (Radius never archives leads
+  // by itself, so most centers carry hundreds of old ones);
+  // collected* = TodaysTotal on completed opportunities: the amount taken at
+  // sign-up (Radius does not expose the recurring amount here).
+  const out = { newLeads: 0, inProgress: 0, openTotal: 0, stale90: 0, enrolledThisMonth: 0, enrolledLastMonth: 0, collectedThisMonth: 0, collectedLastMonth: 0 };
+  for (const r of mine) {
+    const status = String(r.Status || '');
+    if (status === 'New' || status === 'In Progress') {
+      out.openTotal++;
+      if (status === 'In Progress') out.inProgress++;
+      const opened = normalizeDateString(r.OpenDateString || r.CreatedDateString);
+      const age = opened ? dayDiff(today, opened) : null;
+      if (age != null && age <= 30) out.newLeads++;
+      if (age == null || age > 90) out.stale90++;
+    } else if (status === 'Completed') {
+      const closed = normalizeDateString(r.CloseDateString);
+      if (!closed) continue;
+      if (closed.startsWith(month)) { out.enrolledThisMonth++; out.collectedThisMonth += Number(r.TodaysTotal) || 0; }
+      else if (closed.startsWith(lastMonth)) { out.enrolledLastMonth++; out.collectedLastMonth += Number(r.TodaysTotal) || 0; }
+    }
+  }
+  out.collectedThisMonth = Math.round(out.collectedThisMonth);
+  out.collectedLastMonth = Math.round(out.collectedLastMonth);
+  return out;
+}
+
 function combineDetails(list, scopeName) {
   const sum = (k) => list.reduce((a, d) => a + (d[k] || 0), 0);
   const memberCount = sum('memberCount');
@@ -119,6 +212,20 @@ function combineDetails(list, scopeName) {
     schools: mergeBy('name', [].concat(...list.map((d) => d.schools || []))),
     zips: mergeBy('zip', [].concat(...list.map((d) => d.zips || []))),
     centerPins: [].concat(...list.map((d) => d.centerPins || [])),
+    expiring: [].concat(...list.map((d) => d.expiring || [])).sort((a, b) => a.daysLeft - b.daysLeft).slice(0, 80),
+    expectedMonthly: sum('expectedMonthly'),
+    enrollmentCount: sum('enrollmentCount'),
+    packageStudents: sum('packageStudents'),
+    packageValue: sum('packageValue'),
+    pipeline: list.reduce((acc, d) => {
+      for (const [k, v] of Object.entries(d.pipeline || {})) acc[k] = (acc[k] || 0) + v;
+      return acc;
+    }, {}),
+    byCenter: list.map((d) => ({
+      id: d.id, name: d.name, enrolled: d.enrolled, active: d.active, holds: d.holds,
+      expectedMonthly: d.expectedMonthly || 0, packageStudents: d.packageStudents || 0, expiring: (d.expiring || []).length,
+      ...(d.pipeline || {}),
+    })),
   };
 }
 
@@ -142,6 +249,20 @@ class CenterDetailProvider {
     return this.inflight;
   }
 
+  // Cached optional reports: if one fails the page still renders without it.
+  #cached(key, fetcher) {
+    const slot = (this.slots = this.slots || {})[key] || (this.slots[key] = { rows: null, at: 0, inflight: null });
+    if (slot.rows && Date.now() - slot.at < SCHOOL_REPORT_TTL) return Promise.resolve(slot.rows);
+    if (slot.inflight) return slot.inflight;
+    slot.inflight = fetcher()
+      .then((rows) => { if (rows.length) { slot.rows = rows; slot.at = Date.now(); } return rows.length ? rows : (slot.rows || []); })
+      .catch((e) => { console.warn(`[detail] ${key} unavailable:`, e.message); return slot.rows || []; })
+      .finally(() => { slot.inflight = null; });
+    return slot.inflight;
+  }
+  getEnrollments() { return this.#cached('enrollment report', () => this.client.getEnrollmentReport({ statusId: 3 })); }
+  getOpportunities() { return this.#cached('enrollment opportunities', () => this.client.getEnrollmentOpportunities({ statusId: '' })); }
+
   // Holds are optional enrichment: if the report fails we still render the
   // page, just with the days-since-last-visit proxy.
   async getHolds() {
@@ -156,15 +277,20 @@ class CenterDetailProvider {
 
   async detail(center) {
     if (this.client.isMock) return this.client.mockCenterDetail(center);
-    const [schoolRows, attendanceRows, holdRows] = await Promise.all([
+    const [schoolRows, attendanceRows, holdRows, enrollRows, oppRows] = await Promise.all([
       this.getSchoolReport(),
       this.client.getStudentAttendance(center.id).catch(() => []),
       this.getHolds(),
+      this.getEnrollments(),
+      this.getOpportunities(),
     ]);
     const { schools, zips, hint } = placesForCenter(schoolRows, center);
     const geo = await geocodePlaces(schools, zips);
-    const holdStartByStudent = activeHoldStarts(holdRows, todayInTz(center.tz));
-    const detail = computeCenterDetail(center, schoolRows, attendanceRows, geo, { holdStartByStudent });
+    const today = todayInTz(center.tz);
+    const holdStartByStudent = activeHoldStarts(holdRows, today);
+    const detail = computeCenterDetail(center, schoolRows, attendanceRows, geo, { holdStartByStudent, enrolledIds: enrolledIdsFor(enrollRows, center) });
+    Object.assign(detail, enrollmentExtras(enrollRows, center, today));
+    detail.pipeline = pipelineFor(oppRows, center, today);
     const pinsPending = await attachCenterPins([center], [detail], [hint], [zipAnchor(zips, geo)]);
     detail.geocodePending = geo.remaining + pinsPending;
     detail.scope = center.name;
@@ -189,14 +315,20 @@ class CenterDetailProvider {
       for (const s of schools) if (!schoolMap.has(s.name)) schoolMap.set(s.name, s);
       for (const z of zips) if (!zipMap.has(z.zip)) zipMap.set(z.zip, z);
     }
-    const [geo, atts, holdRows] = await Promise.all([
+    const [geo, atts, holdRows, enrollRows, oppRows] = await Promise.all([
       geocodePlaces([...schoolMap.values()], [...zipMap.values()]),
       Promise.all(centers.map((c) => this.client.getStudentAttendance(c.id).catch(() => []))),
       this.getHolds(),
+      this.getEnrollments(),
+      this.getOpportunities(),
     ]);
-    const details = centers.map((c, i) => computeCenterDetail(c, schoolRows, atts[i], geo, {
-      holdStartByStudent: activeHoldStarts(holdRows, todayInTz(c.tz)),
-    }));
+    const details = centers.map((c, i) => {
+      const today = todayInTz(c.tz);
+      const d = computeCenterDetail(c, schoolRows, atts[i], geo, { holdStartByStudent: activeHoldStarts(holdRows, today), enrolledIds: enrolledIdsFor(enrollRows, c) });
+      Object.assign(d, enrollmentExtras(enrollRows, c, today));
+      d.pipeline = pipelineFor(oppRows, c, today);
+      return d;
+    });
     const pinsPending = await attachCenterPins(centers, details, hints, zipLists.map((z) => zipAnchor(z, geo)));
     const combined = combineDetails(details, 'All centers');
     combined.geocodePending = geo.remaining + pinsPending;

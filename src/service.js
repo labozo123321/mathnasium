@@ -5,8 +5,8 @@
 // pass). Every pass folds today's numbers into the history backend, and a
 // daily cron near closing time captures the day even when nobody looked.
 
-const { tzForCenter, computeCenterSnapshot } = require('./dayStats');
-const { mergeDayStats, trendsFromHistory, InMemoryHistory, UpstashHistory } = require('./history');
+const { tzForCenter, todayInTz, computeCenterSnapshot } = require('./dayStats');
+const { mergeDayStats, trendsFromHistory, centerWeekStats, staffHours, InMemoryHistory, UpstashHistory } = require('./history');
 
 class DashboardService {
   constructor(client, { mode = 'live', historyImpl = null, cacheTtlMs = 25000, log = console } = {}) {
@@ -97,6 +97,10 @@ class DashboardService {
           inNow: s.inNow || [],
           staffNow: s.staffNow || [],
           byHourToday: s.byHour || {},
+          ratio: s.ratioNow ?? null,
+          ratioLevel: s.ratioLevel || null,
+          understaffedToday: s.understaffedToday ?? null,
+          ...centerWeekStats(this.historyCache || {}, c.id, todayInTz(c.tz)),
           updatedAt: s.updatedAt || null,
           error: s.error || null,
         };
@@ -111,6 +115,12 @@ class DashboardService {
 
   trends(days = 30, centerId = null) {
     return trendsFromHistory(this.historyCache || {}, days, centerId);
+  }
+
+  staffHours(centerId = null, days = 7) {
+    const centers = centerId ? this.centers.filter((c) => c.id === Number(centerId)) : this.centers;
+    const today = todayInTz(centers[0] ? centers[0].tz : 'America/New_York');
+    return staffHours(this.historyCache || {}, centers, today, days);
   }
 }
 
