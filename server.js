@@ -52,14 +52,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 const { isAuthenticated, checkPassword, authCookieHeader, loginAllowed, loginFailed, loginSucceeded } = require('./src/auth');
 const DASH_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
 
-app.post('/api/login', (req, res) => {
-  if (!loginAllowed(req)) return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
+app.post('/api/login', async (req, res) => {
+  if (!(await loginAllowed(req))) return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
   if (checkPassword(req.body && req.body.password, DASH_PASSWORD)) {
-    loginSucceeded(req);
+    await loginSucceeded(req);
     res.setHeader('Set-Cookie', authCookieHeader(DASH_PASSWORD, req));
     return res.json({ ok: true });
   }
-  loginFailed(req);
+  await loginFailed(req);
   res.status(401).json({ error: 'Wrong password' });
 });
 

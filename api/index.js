@@ -17,6 +17,7 @@ const { CenterDetailProvider } = require('../src/detailService');
 const { buildDigest, sendDigest, digestConfigured } = require('../src/digest');
 const {
   isAuthenticated, checkPassword, authCookieHeader, readJsonBody, parseCookies,
+  sealCredentials, openCredentials, credentialKey, secureFlag,
   loginAllowed, loginFailed, loginSucceeded,
 } = require('../src/auth');
 
@@ -49,17 +50,13 @@ function resolveService(req) {
       }), 'live'),
     };
   }
-  const raw = parseCookies(req)[RADIUS_COOKIE];
-  if (raw) {
-    try {
-      const { u, p } = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
-      if (u && p) {
-        return {
-          mock: false,
-          service: serviceFor(`u:${u}`, () => new RadiusClient({ username: u, password: p }), 'live'),
-        };
-      }
-    } catch (e) { /* malformed cookie - treat as absent */ }
+  const creds = openCredentials(parseCookies(req)[RADIUS_COOKIE], PASSWORD);
+  if (creds) {
+    const { u, p } = creds;
+    return {
+      mock: false,
+      service: serviceFor(credentialKey(u, p), () => new RadiusClient({ username: u, password: p }), 'live'),
+    };
   }
   return { mock: true, service: serviceFor('mock', () => new MockRadiusClient(), 'mock') };
 }
@@ -83,7 +80,7 @@ function json(res, status, body) {
 module.exports = async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const path = url.pathname;
-  const secure = process.env.VERCEL ? '; Secure' : '';
+  const secure = secureFlag(req);
 
   // The cron ping just refreshes data + history; it returns no center data,
   // so it stays open (worst case a stranger refreshes our cache). It can only
@@ -123,14 +120,14 @@ module.exports = async (req, res) => {
   }
 
   if (path === '/api/login' && req.method === 'POST') {
-    if (!loginAllowed(req)) return json(res, 429, { error: 'Too many attempts. Try again in 15 minutes.' });
+    if (!(await loginAllowed(req))) return json(res, 429, { error: 'Too many attempts. Try again in 15 minutes.' });
     const body = await readJsonBody(req);
     if (checkPassword(body.password, PASSWORD)) {
-      loginSucceeded(req);
+      await loginSucceeded(req);
       res.setHeader('Set-Cookie', authCookieHeader(PASSWORD, req));
       return json(res, 200, { ok: true });
     }
-    loginFailed(req);
+    await loginFailed(req);
     return json(res, 401, { error: 'Wrong password' });
   }
 
@@ -153,9 +150,9 @@ module.exports = async (req, res) => {
         error: 'Radius did not accept that login. Double-check the username and password you use at radius.mathnasium.com.',
       });
     }
-    const value = Buffer.from(JSON.stringify({ u, p })).toString('base64');
+    const value = sealCredentials({ u, p }, PASSWORD);
     res.setHeader('Set-Cookie', `${RADIUS_COOKIE}=${value}; Path=/; Max-Age=${YEAR}; HttpOnly; SameSite=Lax${secure}`);
-    services.set(`u:${u}`, new DashboardService(client, { mode: 'live' })); // reuse the verified session
+    services.set(credentialKey(u, p), new DashboardService(client, { mode: 'live' })); // reuse the verified session
     return json(res, 200, { ok: true });
   }
 

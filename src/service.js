@@ -6,7 +6,7 @@
 // daily cron near closing time captures the day even when nobody looked.
 
 const { tzForCenter, todayInTz, computeCenterSnapshot } = require('./dayStats');
-const { mergeDayStats, trendsFromHistory, centerWeekStats, staffHours, InMemoryHistory, UpstashHistory } = require('./history');
+const { mergeDayStats, trendsFromHistory, centerOverview, staffHours, InMemoryHistory, UpstashHistory } = require('./history');
 
 class DashboardService {
   constructor(client, { mode = 'live', historyImpl = null, cacheTtlMs = 25000, log = console } = {}) {
@@ -84,28 +84,7 @@ class DashboardService {
       lastSync: this.lastSync,
       persistentHistory: this.persistent,
       sync: { ...this.sync },
-      centers: this.centers.map((c) => {
-        const s = this.snapshots.get(c.id) || {};
-        return {
-          id: c.id,
-          name: c.name,
-          tz: c.tz,
-          checkedIn: s.checkedIn ?? null,
-          staffIn: s.staffIn ?? null,
-          visitsToday: s.visitsToday ?? null,
-          rosterCount: s.rosterCount ?? null,
-          inNow: s.inNow || [],
-          staffNow: s.staffNow || [],
-          byHourToday: s.byHour || {},
-          ratio: s.ratioNow ?? null,
-          ratioLevel: s.ratioLevel || null,
-          understaffedToday: s.understaffedToday ?? null,
-          coverage: s.coverageToday || [],
-          ...centerWeekStats(this.historyCache || {}, c.id, todayInTz(c.tz)),
-          updatedAt: s.updatedAt || null,
-          error: s.error || null,
-        };
-      }),
+      centers: this.centers.map((c) => centerOverview(c, this.snapshots.get(c.id) || {}, this.historyCache || {}, todayInTz(c.tz))),
     };
   }
 
@@ -119,9 +98,10 @@ class DashboardService {
   }
 
   staffHours(centerId = null, days = 7) {
-    const centers = centerId ? this.centers.filter((c) => c.id === Number(centerId)) : this.centers;
-    const today = todayInTz(centers[0] ? centers[0].tz : 'America/New_York');
-    return staffHours(this.historyCache || {}, centers, today, days);
+    // each center carries its own local date - they span three timezones
+    const centers = (centerId ? this.centers.filter((c) => c.id === Number(centerId)) : this.centers)
+      .map((c) => ({ ...c, today: todayInTz(c.tz) }));
+    return staffHours(this.historyCache || {}, centers, todayInTz('America/New_York'), days);
   }
 }
 

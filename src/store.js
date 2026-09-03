@@ -8,7 +8,7 @@ const path = require('path');
 const {
   tzForCenter, todayInTz, normalizeDateString, timeToMinutes, computeCenterSnapshot,
 } = require('./dayStats');
-const { mergeDayStats, trendsFromHistory, centerWeekStats, staffHours } = require('./history');
+const { mergeDayStats, trendsFromHistory, centerOverview, staffHours } = require('./history');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
@@ -23,17 +23,35 @@ class Store {
     this.sync = { failures: 0, lastError: null, lastSuccessAt: null };
   }
 
+  // A corrupt history file must never be silently discarded - it is the only
+  // copy of every past day. Keep the bad file, say so loudly, and start fresh.
   #loadHistory() {
+    if (!fs.existsSync(HISTORY_FILE)) return {};
     try {
-      return JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+      if (parsed && typeof parsed === 'object') return parsed;
+      throw new Error('history file is not an object');
     } catch (e) {
+      const salvage = `${HISTORY_FILE}.corrupt-${Date.now()}`;
+      try { fs.renameSync(HISTORY_FILE, salvage); } catch (e2) { /* best effort */ }
+      console.error(`[store] history.json could not be read (${e.message}). Kept a copy at ${salvage} and started a new file.`);
+      this.historyError = e.message;
       return {};
     }
   }
 
+  // Write to a temp file and rename: a crash mid-write leaves the previous
+  // history intact instead of truncating it to nothing.
   #saveHistory() {
     fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(HISTORY_FILE, JSON.stringify(this.history));
+    const tmp = `${HISTORY_FILE}.${process.pid}.tmp`;
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(this.history));
+      fs.renameSync(tmp, HISTORY_FILE);
+    } catch (e) {
+      try { fs.unlinkSync(tmp); } catch (e2) { /* nothing to clean up */ }
+      console.error('[store] could not save history:', e.message);
+    }
   }
 
   setCenters(centers) {
@@ -61,28 +79,7 @@ class Store {
       mode: this.mode,
       lastSync: this.lastSync,
       sync: { ...this.sync },
-      centers: this.centers.map((c) => {
-        const l = this.live.get(c.id) || {};
-        return {
-          id: c.id,
-          name: c.name,
-          tz: c.tz,
-          checkedIn: l.checkedIn ?? null,
-          staffIn: l.staffIn ?? null,
-          visitsToday: l.visitsToday ?? null,
-          rosterCount: l.rosterCount ?? null,
-          inNow: l.inNow || [],
-          staffNow: l.staffNow || [],
-          byHourToday: this.history[todayInTz(c.tz)]?.[c.id]?.byHour || {},
-          ratio: l.ratioNow ?? null,
-          ratioLevel: l.ratioLevel || null,
-          understaffedToday: l.understaffedToday ?? null,
-          coverage: l.coverageToday || [],
-          ...centerWeekStats(this.history, c.id, todayInTz(c.tz)),
-          updatedAt: l.updatedAt || null,
-          error: l.error || null,
-        };
-      }),
+      centers: this.centers.map((c) => centerOverview(c, this.live.get(c.id) || {}, this.history, todayInTz(c.tz))),
     };
   }
 
@@ -96,9 +93,10 @@ class Store {
   }
 
   staffHours(centerId = null, days = 7) {
-    const centers = centerId ? this.centers.filter((c) => c.id === Number(centerId)) : this.centers;
-    const today = todayInTz(centers[0] ? centers[0].tz : 'America/New_York');
-    return staffHours(this.history, centers, today, days);
+    // each center carries its own local date - they span three timezones
+    const centers = (centerId ? this.centers.filter((c) => c.id === Number(centerId)) : this.centers)
+      .map((c) => ({ ...c, today: todayInTz(c.tz) }));
+    return staffHours(this.history, centers, todayInTz('America/New_York'), days);
   }
 }
 

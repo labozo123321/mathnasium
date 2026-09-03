@@ -52,7 +52,10 @@ async function loadCache() {
   return mem;
 }
 async function saveCache(obj) {
-  if (store) return store.save(obj);
+  // Same one-key race as the history blob: re-read and merge so a parallel
+  // request's freshly geocoded places are not thrown away. Entries are
+  // immutable once written, so a plain union is correct.
+  if (store) return store.save({ ...(await store.load()), ...obj });
   mem = obj;
   try {
     fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
