@@ -88,7 +88,7 @@ app.get('/api/trends', (req, res) => {
 });
 
 const { CenterDetailProvider } = require('./src/detailService');
-const { tzForCenter } = require('./src/dayStats');
+const { tzForCenter, todayInTz } = require('./src/dayStats');
 const detailProvider = new CenterDetailProvider(client);
 
 async function allCenters() {
@@ -96,6 +96,19 @@ async function allCenters() {
   const list = await client.getCenters();
   return list.map((c) => ({ ...c, tz: tzForCenter(c.name) }));
 }
+
+app.get('/api/cohorts', async (req, res) => {
+  try {
+    const centers = await allCenters();
+    const center = req.query.center ? centers.find((c) => String(c.id) === String(req.query.center)) : null;
+    if (req.query.center && !center) return res.status(404).json({ error: 'unknown center' });
+    const months = Math.min(Number(req.query.months) || 24, 60);
+    const tz = center ? center.tz : (centers[0] && centers[0].tz) || 'America/New_York';
+    res.json(await detailProvider.cohorts(center, todayInTz(tz), months));
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
 
 app.get('/api/staff-hours', (req, res) => {
   res.json({ rows: store.staffHours(req.query.center ? Number(req.query.center) : null) });
