@@ -174,6 +174,12 @@ How the Vercel version differs from running locally:
   the Enrollment Opportunity dashboard, which is where the revenue, expiring
   and pipeline numbers come from. Invoices and payments are not visible to
   it.
+- The joined/left figures are derived, because Radius has no churn report:
+  each student's first enrollment start counts as their join, and their last
+  enrollment end counts as their departure once nothing is live. The model
+  cross-checks itself - students who ever joined, minus students who ever
+  left, equals the roster Radius reports today - and that identity is
+  covered by a test.
 - If Radius changes its login flow or endpoints, `src/radiusClient.js` is
   the only file that talks to it.
 

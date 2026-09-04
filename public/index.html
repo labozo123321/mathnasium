@@ -38,6 +38,10 @@
       <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></svg></span>
       <span class="nav-label">Live now</span>
     </a>
+    <a class="nav-item" href="#growth" data-nav="growth">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></span>
+      <span class="nav-label">Growth</span>
+    </a>
     <a class="nav-item" href="#trends" data-nav="trends">
       <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8M14 7h7v7"/></svg></span>
       <span class="nav-label">Trends</span>
@@ -184,6 +188,65 @@
         </table></div>
         <p class="empty muted" id="staffEmpty" hidden>No instructor check-ins recorded yet. Hours build up while the app runs.</p>
       </figure>
+    </section>
+
+    <section id="growth" aria-label="Growth and retention">
+      <h2 id="growthTitle">Growth &amp; retention</h2>
+
+      <div class="month-finder">
+        <div class="finder-input">
+          <span class="finder-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+          </span>
+          <input id="monthSearch" type="search" autocomplete="off" spellcheck="false"
+                 placeholder="Type a month — “March 2026”, “best”, “worst”, “biggest drop”…"
+                 aria-label="Find a month to pin on the charts" aria-describedby="finderHelp">
+          <button type="button" class="finder-clear" id="finderClear" hidden aria-label="Clear the pinned month">✕</button>
+        </div>
+        <div class="finder-chips" id="finderChips"></div>
+        <p class="muted" id="finderHelp">Pin a month to mark it on every chart below. Click any bar to pin it, then use ← and → to step through months.</p>
+      </div>
+
+      <div class="pin-card" id="pinCard" hidden></div>
+
+      <div class="growth-grid">
+        <figure class="card span-2" id="flowCard">
+          <figcaption>
+            <h2>Students joined and left, by month</h2>
+            <div class="map-tools">
+              <div class="legend">
+                <span class="legend-item"><i class="swatch joined"></i>Joined</span>
+                <span class="legend-item"><i class="swatch leftc"></i>Left</span>
+                <span class="legend-item"><i class="swatch netline"></i>Net change</span>
+              </div>
+              <button class="ghost-btn table-toggle" data-target="flowTable">Table</button>
+            </div>
+          </figcaption>
+          <div class="chart" id="flowChart"></div>
+          <div class="table-view" id="flowTable" hidden></div>
+        </figure>
+
+        <figure class="card" id="rosterCard">
+          <figcaption>
+            <h2>Active students over time</h2>
+            <span class="muted" id="rosterNote"></span>
+          </figcaption>
+          <div class="chart" id="rosterChart"></div>
+        </figure>
+
+        <figure class="card" id="stayCard">
+          <figcaption>
+            <h2>Length of stay, by month left</h2>
+            <div class="legend">
+              <span class="legend-item"><i class="swatch stayline"></i>Median</span>
+              <span class="legend-item"><i class="swatch stayband"></i>Middle half</span>
+            </div>
+          </figcaption>
+          <div class="chart" id="stayChart"></div>
+          <p class="muted" id="stayNote"></p>
+        </figure>
+      </div>
+      <p class="empty muted" id="growthEmpty" hidden></p>
     </section>
 
     <section id="trends" class="two-col" aria-label="Trends">

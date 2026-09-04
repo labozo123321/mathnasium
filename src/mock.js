@@ -161,6 +161,45 @@ class MockRadiusClient {
     };
   }
 
+  // Demo cohort series with a believable shape: a summer intake spike, a
+  // post-holiday dip, and tenure drifting up as the centers mature.
+  mockCohorts(center, todayIso, months = 24) {
+    const { cohortSeries } = require('./cohorts');
+    const scope = center ? [center] : CENTERS.map((c) => ({ id: c.CenterId, name: c.CenterName }));
+    const today = todayIso || new Date().toISOString().slice(0, 10);
+    const records = [];
+    let uid = 1;
+    for (const c of scope) {
+      const rand = rng((c.id || c.CenterId) * 977);
+      const base = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 1));
+      for (let back = months + 30; back >= 0; back--) {
+        const m = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() - back, 1));
+        const mon = m.getUTCMonth();
+        const summer = mon === 5 || mon === 6 || mon === 7 ? 2.1 : 1;
+        const holiday = mon === 11 || mon === 0 ? 0.55 : 1;
+        const n = Math.round((3 + rand() * 5) * summer * holiday);
+        for (let i = 0; i < n; i++) {
+          const startDay = 1 + Math.floor(rand() * 27);
+          const first = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth(), startDay));
+          const stayMonths = Math.max(1, Math.round(4 + rand() * 22 + (back < 12 ? 3 : 0)));
+          const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + stayMonths, startDay));
+          const iso = (d) => d.toISOString().slice(0, 10);
+          const stillHere = iso(last) > today;
+          records.push({
+            id: uid++,
+            first: iso(first),
+            last: stillHere ? null : iso(last),
+            months: stayMonths,
+            center: c.name || c.CenterName,
+            centerId: c.id || c.CenterId,
+            active: stillHere,
+          });
+        }
+      }
+    }
+    return cohortSeries(records, { center: null, todayIso: today, months });
+  }
+
   async getCenters() {
     return CENTERS.map((c) => ({ id: c.CenterId, name: c.CenterName }));
   }

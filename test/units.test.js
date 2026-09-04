@@ -274,3 +274,115 @@ test('checkPassword is exact and refuses an unset password', () => {
   assert.equal(checkPassword('', ''), false, 'no configured password must never authenticate');
   assert.equal(checkPassword(undefined, '1234'), false);
 });
+
+// --- cohorts --------------------------------------------------------------
+
+const { studentRecords, cohortSeries, addMonths, monthRange, quantile } = require('../src/cohorts');
+
+const enr = (id, start, end, extra = {}) => ({
+  StudentId: id, EnrStartDateString: start, EnrEndDateString: end,
+  CenterId: 1, CenterName: 'East', StudentLengthofStay: extra.los, ...extra,
+});
+
+test('addMonths and monthRange walk the calendar across year ends', () => {
+  assert.equal(addMonths('2026-01', -1), '2025-12');
+  assert.equal(addMonths('2026-12', 1), '2027-01');
+  assert.deepEqual(monthRange('2026-03', 3), ['2026-01', '2026-02', '2026-03']);
+});
+
+test('quantile interpolates', () => {
+  assert.equal(quantile([1, 2, 3, 4], 0.5), 2.5);
+  assert.equal(quantile([5], 0.5), 5);
+  assert.equal(quantile([], 0.5), null);
+});
+
+test('studentRecords folds many enrollments into one record per student', () => {
+  const [rec] = studentRecords([
+    enr(1, '3/1/2024', '8/31/2024', { los: 6 }),
+    enr(1, '1/15/2025', '6/30/2025', { los: 16 }),
+  ], new Set());
+  assert.equal(rec.first, '2024-03-01', 'earliest start wins');
+  assert.equal(rec.last, '2025-06-30', 'latest end wins');
+  assert.equal(rec.months, 16, 'largest reported tenure wins');
+  assert.equal(rec.active, false);
+});
+
+test('cohortSeries counts a join in the month of the FIRST enrollment', () => {
+  const recs = studentRecords([
+    enr(1, '2/10/2026', '4/30/2026', { los: 3 }),
+    enr(1, '6/1/2026', '7/31/2026', { los: 6 }), // a return visit is not a new join
+  ], new Set());
+  const { months } = cohortSeries(recs, { todayIso: '2026-09-03', months: 12 });
+  const at = (m) => months.find((x) => x.month === m);
+  assert.equal(at('2026-02').joined, 1);
+  assert.equal(at('2026-06').joined, 0, 're-enrolling is not joining again');
+  assert.equal(at('2026-07').left, 1, 'they leave in the month of their last end');
+  assert.equal(at('2026-04').left, 0);
+});
+
+test('cohortSeries never counts a currently-enrolled student as having left', () => {
+  const recs = studentRecords([enr(1, '1/5/2025', '8/31/2026', { los: 20 })], new Set([1]));
+  const { months, totals } = cohortSeries(recs, { todayIso: '2026-09-03', months: 12 });
+  assert.equal(months.reduce((a, m) => a + m.left, 0), 0);
+  assert.equal(totals.currentActive, 1);
+});
+
+test('cohortSeries ignores end dates that have not happened yet', () => {
+  const recs = studentRecords([enr(1, '1/5/2025', '12/31/2027', { los: 20 })], new Set());
+  const { months } = cohortSeries(recs, { todayIso: '2026-09-03', months: 12 });
+  assert.equal(months.reduce((a, m) => a + m.left, 0), 0, 'a future end date is not a departure');
+});
+
+test('everJoined - everLeft equals the live roster (the identity the model rests on)', () => {
+  const rows = [];
+  for (let i = 1; i <= 40; i++) rows.push(enr(i, '1/10/2024', '5/31/2025', { los: 16 }));
+  for (let i = 41; i <= 50; i++) rows.push(enr(i, '2/10/2026', '9/30/2027', { los: 7 }));
+  const current = new Set([41, 42, 43, 44, 45, 46, 47, 48, 49, 50]);
+  const { totals } = cohortSeries(studentRecords(rows, current), { todayIso: '2026-09-03', months: 36 });
+  assert.equal(totals.everJoined, 50);
+  assert.equal(totals.everLeft, 40);
+  assert.equal(totals.everJoined - totals.everLeft, totals.currentActive);
+});
+
+test('the roster line carries forward students who joined before the window', () => {
+  const recs = studentRecords([enr(1, '1/10/2020', '6/30/2026', { los: 77 })], new Set());
+  const { months } = cohortSeries(recs, { todayIso: '2026-09-03', months: 6 });
+  assert.equal(months[0].month, '2026-04');
+  assert.equal(months[0].active, 1, 'counted even though they joined long before the window');
+  assert.equal(months.find((m) => m.month === '2026-06').active, 0, 'and drops off when they leave');
+});
+
+test('length-of-stay stats describe the students who left that month', () => {
+  const rows = [2, 4, 6, 8].map((los, i) => enr(i + 1, '1/1/2024', '5/15/2026', { los }));
+  const { months } = cohortSeries(studentRecords(rows, new Set()), { todayIso: '2026-09-03', months: 12 });
+  const may = months.find((m) => m.month === '2026-05');
+  assert.equal(may.leaverCount, 4);
+  assert.equal(may.avgStay, 5);
+  assert.equal(may.medianStay, 5);
+  assert.equal(may.p25Stay, 3.5);
+  assert.equal(may.p75Stay, 6.5);
+  const june = months.find((m) => m.month === '2026-06');
+  assert.equal(june.avgStay, null, 'no leavers means no average, not zero');
+});
+
+test('cohortSeries scopes to one center', () => {
+  const recs = studentRecords([
+    enr(1, '2/1/2026', '4/30/2026', { los: 3 }),
+    enr(2, '2/1/2026', '4/30/2026', { los: 3, CenterId: 2, CenterName: 'West' }),
+  ], new Set());
+  const east = cohortSeries(recs, { center: { id: 1, name: 'East' }, todayIso: '2026-09-03', months: 12 });
+  assert.equal(east.totals.everJoined, 1);
+  assert.equal(east.scope, 'East');
+  assert.equal(cohortSeries(recs, { todayIso: '2026-09-03', months: 12 }).totals.everJoined, 2);
+});
+
+test('retention is measured against the roster at the start of the month', () => {
+  const rows = [];
+  for (let i = 1; i <= 10; i++) rows.push(enr(i, '1/1/2025', '5/31/2026', { los: 17 })); // 10 leave in May
+  for (let i = 11; i <= 100; i++) rows.push(enr(i, '1/1/2025', '12/31/2027', { los: 20 }));
+  const current = new Set(Array.from({ length: 90 }, (_, i) => i + 11));
+  const { months } = cohortSeries(studentRecords(rows, current), { todayIso: '2026-09-03', months: 12 });
+  const may = months.find((m) => m.month === '2026-05');
+  assert.equal(may.left, 10);
+  assert.equal(may.retention, 90, '10 of 100 left, so 90% stayed');
+});

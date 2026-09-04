@@ -14,6 +14,7 @@ const { RadiusClient } = require('../src/radiusClient');
 const { MockRadiusClient } = require('../src/mock');
 const { DashboardService } = require('../src/service');
 const { CenterDetailProvider } = require('../src/detailService');
+const { todayInTz } = require('../src/dayStats');
 const { buildDigest, sendDigest, digestConfigured } = require('../src/digest');
 const {
   isAuthenticated, checkPassword, authCookieHeader, readJsonBody, parseCookies,
@@ -184,6 +185,16 @@ module.exports = async (req, res) => {
       const days = Math.min(Number(url.searchParams.get('days')) || 30, 120);
       const center = url.searchParams.get('center') ? Number(url.searchParams.get('center')) : null;
       return json(res, 200, { days: service.trends(days, center) });
+    }
+    if (path === '/api/cohorts') {
+      await service.refresh();
+      service.detailProvider = service.detailProvider || new CenterDetailProvider(service.client);
+      const id = url.searchParams.get('center');
+      const center = id ? service.centers.find((c) => String(c.id) === id) : null;
+      if (id && !center) return json(res, 404, { error: 'unknown center' });
+      const months = Math.min(Number(url.searchParams.get('months')) || 24, 60);
+      const tz = center ? center.tz : (service.centers[0] && service.centers[0].tz) || 'America/New_York';
+      return json(res, 200, await service.detailProvider.cohorts(center, todayInTz(tz), months));
     }
     if (path === '/api/staff-hours') {
       await service.refresh();

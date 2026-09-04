@@ -6,8 +6,10 @@
 const { computeCenterDetail, placesForCenter } = require('./centerDetail');
 const { todayInTz, normalizeDateString } = require('./dayStats');
 const { geocodePlaces, geocodeCenters, kmBetween } = require('./geocode');
+const { studentRecords, cohortSeries } = require('./cohorts');
 
 const SCHOOL_REPORT_TTL = 10 * 60 * 1000; // heavy call - cache 10 min
+const HISTORY_TTL = 6 * 60 * 60 * 1000;   // ~30s to fetch, and it only moves daily
 
 // StudentId -> ISO start date of the hold that is active on `today`.
 // If a student has several, the most recent start wins.
@@ -290,9 +292,9 @@ class CenterDetailProvider {
   }
 
   // Cached optional reports: if one fails the page still renders without it.
-  #cached(key, fetcher) {
+  #cached(key, fetcher, ttl = SCHOOL_REPORT_TTL) {
     const slot = (this.slots = this.slots || {})[key] || (this.slots[key] = { rows: null, at: 0, inflight: null });
-    if (slot.rows && Date.now() - slot.at < SCHOOL_REPORT_TTL) return Promise.resolve(slot.rows);
+    if (slot.rows && Date.now() - slot.at < ttl) return Promise.resolve(slot.rows);
     if (slot.inflight) return slot.inflight;
     slot.inflight = fetcher()
       .then((rows) => { if (rows.length) { slot.rows = rows; slot.at = Date.now(); } return rows.length ? rows : (slot.rows || []); })
@@ -302,6 +304,27 @@ class CenterDetailProvider {
   }
   getEnrollments() { return this.#cached('enrollment report', () => this.client.getEnrollmentReport({ statusId: 3 })); }
   getOpportunities() { return this.#cached('enrollment opportunities', () => this.client.getEnrollmentOpportunities({ statusId: '' })); }
+
+  // Every enrollment ever recorded, for the joined/left/tenure trends. A wide
+  // date window makes the Enrollment report return the full history rather
+  // than only live enrollments, which is what the cohort maths needs.
+  getEnrollmentHistory() {
+    return this.#cached('enrollment history', () => this.client.getEnrollmentReport({
+      statusId: 3,
+      start: new Date(Date.UTC(2010, 0, 1)),
+      end: new Date(Date.UTC(new Date().getUTCFullYear() + 3, 11, 31)),
+    }), HISTORY_TTL);
+  }
+
+  // Monthly joined / left / roster / length-of-stay series for one center
+  // (or all of them). Aggregates only - no student row leaves this method.
+  async cohorts(center, todayIso, months = 24) {
+    if (this.client.isMock) return this.client.mockCohorts(center, todayIso, months);
+    const [history, current] = await Promise.all([this.getEnrollmentHistory(), this.getEnrollments()]);
+    if (!history.length) return { months: [], scope: center ? center.name : 'All centers', totals: null, unavailable: true };
+    const currentIds = new Set(current.map((r) => Number(r.StudentId)).filter(Number.isFinite));
+    return cohortSeries(studentRecords(history, currentIds), { center, todayIso, months });
+  }
 
   // Holds are optional enrichment: if the report fails we still render the
   // page, just with the days-since-last-visit proxy.

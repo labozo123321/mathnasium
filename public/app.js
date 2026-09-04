@@ -20,6 +20,9 @@
     basemap: 'streets', // 'streets' | 'satellite'
     queueTab: 'runningOut',
     staffHours: [],
+    cohorts: null,      // monthly joined / left / roster / tenure
+    pinned: null,       // month key pinned by the finder, e.g. '2026-03'
+    finderText: '',
   };
   try { state.basemap = localStorage.getItem('mn-basemap') || 'streets'; } catch (e) { /* private mode */ }
 
@@ -129,6 +132,16 @@
     if (state.center) q.set('center', state.center);
     state.trends = (await apiFetch('/api/trends?' + q)).days;
   }
+  async function loadCohorts() {
+    try {
+      const q = state.center ? '?center=' + state.center : '';
+      state.cohorts = await apiFetch('/api/cohorts' + q);
+    } catch (e) {
+      if (e && e.auth) throw e;
+      state.cohorts = null;
+    }
+  }
+
   async function loadStaffHours() {
     try {
       state.staffHours = (await apiFetch('/api/staff-hours' + (state.center ? '?center=' + state.center : ''))).rows || [];
@@ -604,6 +617,366 @@
       ? `${r.referred} of ${r.total} opportunities in the last 12 months came from a parent referral (${Math.round((r.referred / r.total) * 100)}%). Radius records no other source, so ask staff to fill in the referral field.`
       : '';
   }
+
+
+  // ---------- growth & retention ----------
+  const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  const shortMonth = (key) => MONTH_NAMES[Number(key.slice(5, 7)) - 1].slice(0, 3);
+  const monthsOf = () => (state.cohorts && state.cohorts.months) || [];
+  const pinnedRow = () => monthsOf().find((m) => m.month === state.pinned) || null;
+
+  // Turn what someone types into a month key. Understands "March 2026",
+  // "mar 26", "2026-03", "3/2026", "last month", and the superlatives.
+  function resolveMonthQuery(raw) {
+    const months = monthsOf();
+    if (!months.length) return null;
+    const q = String(raw || '').trim().toLowerCase();
+    if (!q) return null;
+    const pick = (fn, empty) => {
+      const pool = months.filter(empty);
+      if (!pool.length) return null;
+      return pool.reduce(fn).month;
+    };
+    if (/^(this|current) month$/.test(q)) return months[months.length - 1].month;
+    if (/^last month$/.test(q)) return (months[months.length - 2] || months[months.length - 1]).month;
+    if (/best|biggest gain|top|grew|growth/.test(q)) return pick((a, b) => (b.net > a.net ? b : a), () => true);
+    if (/worst|biggest drop|biggest loss|decline|shrank/.test(q)) return pick((a, b) => (b.net < a.net ? b : a), () => true);
+    if (/most joined|busiest|most sign|most new/.test(q)) return pick((a, b) => (b.joined > a.joined ? b : a), () => true);
+    if (/most left|most churn|worst churn/.test(q)) return pick((a, b) => (b.left > a.left ? b : a), () => true);
+    if (/longest stay|loyal/.test(q)) return pick((a, b) => ((b.medianStay || 0) > (a.medianStay || 0) ? b : a), (m) => m.medianStay != null);
+    if (/shortest stay/.test(q)) return pick((a, b) => ((b.medianStay || 0) < (a.medianStay || 0) ? b : a), (m) => m.medianStay != null);
+
+    const iso = /(\d{4})[-/](\d{1,2})/.exec(q);          // 2026-03 or 2026/3
+    if (iso) return months.find((m) => m.month === `${iso[1]}-${String(iso[2]).padStart(2, '0')}`)?.month || null;
+    const us = /^(\d{1,2})[-/](\d{4})$/.exec(q);          // 3/2026
+    if (us) return months.find((m) => m.month === `${us[2]}-${String(us[1]).padStart(2, '0')}`)?.month || null;
+
+    const name = MONTH_NAMES.findIndex((n) => q.startsWith(n.slice(0, 3).toLowerCase()));
+    if (name >= 0) {
+      const yr = /(\d{4})/.exec(q) || /'?(\d{2})\b/.exec(q);
+      const year = yr ? (yr[1].length === 2 ? 2000 + Number(yr[1]) : Number(yr[1])) : null;
+      const key = (y) => `${y}-${String(name + 1).padStart(2, '0')}`;
+      if (year) return months.find((m) => m.month === key(year))?.month || null;
+      // no year given: the most recent month with that name
+      for (let i = months.length - 1; i >= 0; i--) if (months[i].month.slice(5) === String(name + 1).padStart(2, '0')) return months[i].month;
+    }
+    return null;
+  }
+
+  function setPinned(monthKey, { fromInput = false } = {}) {
+    state.pinned = monthKey || null;
+    if (!fromInput) $('#monthSearch').value = monthKey ? monthLabelOf(monthKey) : '';
+    $('#finderClear').hidden = !monthKey && !$('#monthSearch').value;
+    renderGrowth();
+  }
+  const monthLabelOf = (key) => `${MONTH_NAMES[Number(key.slice(5, 7)) - 1]} ${key.slice(0, 4)}`;
+
+  function renderFinderChips() {
+    const months = monthsOf();
+    const box = $('#finderChips');
+    if (!months.length) { box.replaceChildren(); return; }
+    const best = months.reduce((a, b) => (b.net > a.net ? b : a));
+    const worst = months.reduce((a, b) => (b.net < a.net ? b : a));
+    const busiest = months.reduce((a, b) => (b.joined > a.joined ? b : a));
+    const shortcuts = [
+      { label: 'This month', key: months[months.length - 1].month, val: null },
+      { label: 'Best month', key: best.month, val: `${best.net >= 0 ? '+' : ''}${best.net}` },
+      { label: 'Worst month', key: worst.month, val: `${worst.net}` },
+      { label: 'Most joined', key: busiest.month, val: `+${busiest.joined}` },
+    ];
+    box.replaceChildren(...shortcuts.map((sc) => h('button', {
+      type: 'button', class: 'chip' + (state.pinned === sc.key ? ' active' : ''),
+      onclick: () => setPinned(state.pinned === sc.key ? null : sc.key),
+    }, [
+      h('span', { text: sc.label }),
+      sc.val ? h('span', { class: 'chip-val', text: sc.val }) : null,
+    ])));
+  }
+
+  function renderPinCard() {
+    const card = $('#pinCard');
+    const row = pinnedRow();
+    if (!row) { card.hidden = true; card.replaceChildren(); return; }
+    const months = monthsOf();
+    const i = months.indexOf(row);
+    const prev = i > 0 ? months[i - 1] : null;
+    const delta = (cur, before, invert) => {
+      if (before == null || cur == null) return h('div', { class: 'pd flat', text: 'no earlier month' });
+      const d = Math.round((cur - before) * 10) / 10;
+      const good = invert ? d < 0 : d > 0;
+      const cls = d === 0 ? 'flat' : (good ? 'up' : 'down');
+      return h('div', { class: 'pd ' + cls, text: `${d > 0 ? '+' : ''}${d} vs ${shortMonth(prev.month)}` });
+    };
+    const stat = (label, value, deltaEl) => h('div', { class: 'pin-stat' }, [
+      h('div', { class: 'pv', text: value }),
+      h('div', { class: 'pl', text: label }),
+      deltaEl,
+    ]);
+    card.hidden = false;
+    card.replaceChildren(
+      h('div', { class: 'pin-head' }, [
+        h('h3', { text: row.label }),
+        h('span', { class: 'muted', text: state.cohorts.scope }),
+        h('span', { class: 'muted', text: row.net >= 0 ? `grew by ${row.net}` : `shrank by ${Math.abs(row.net)}` }),
+      ]),
+      h('div', { class: 'pin-stats' }, [
+        stat('Joined', String(row.joined), delta(row.joined, prev && prev.joined, false)),
+        stat('Left', String(row.left), delta(row.left, prev && prev.left, true)),
+        stat('Net change', `${row.net >= 0 ? '+' : ''}${row.net}`, delta(row.net, prev && prev.net, false)),
+        stat('Active at month end', String(row.active), delta(row.active, prev && prev.active, false)),
+        stat('Kept', row.retention == null ? '—' : row.retention + '%', delta(row.retention, prev && prev.retention, false)),
+        stat('Median stay', row.medianStay == null ? '—' : row.medianStay + ' mo',
+          row.leaverCount ? h('div', { class: 'pd flat', text: `${row.leaverCount} student${row.leaverCount === 1 ? '' : 's'} left` }) : h('div', { class: 'pd flat', text: 'nobody left' })),
+      ]),
+    );
+  }
+
+  // Shared x-scale helpers for the three growth charts.
+  function growthGeom(W, Hgt, left, right, top, bottom) {
+    const months = monthsOf();
+    const iw = W - left - right;
+    const step = iw / Math.max(1, months.length);
+    return { months, iw, ih: Hgt - top - bottom, step, xMid: (i) => left + i * step + step / 2 };
+  }
+
+  function monthTicks(svg, g, left, Hgt) {
+    const n = g.months.length;
+    const every = n > 30 ? 6 : n > 18 ? 3 : 2;
+    g.months.forEach((m, i) => {
+      if (i % every !== 0 && i !== n - 1) return;
+      const label = shortMonth(m.month) + (m.month.slice(5, 7) === '01' || i === 0 ? ` ’${m.month.slice(2, 4)}` : '');
+      svg.appendChild(h('text', { x: g.xMid(i), y: Hgt - 6, 'text-anchor': 'middle', text: label }));
+    });
+  }
+
+  // Pin marker drawn behind the marks on every chart.
+  function pinBand(svg, g, top, ih) {
+    if (!state.pinned) return;
+    const i = g.months.findIndex((m) => m.month === state.pinned);
+    if (i < 0) return;
+    svg.appendChild(h('rect', { class: 'pin-band', x: g.xMid(i) - g.step / 2, y: top, width: g.step, height: ih, rx: 6 }));
+    svg.appendChild(h('line', { class: 'pin-rule', x1: g.xMid(i), y1: top, x2: g.xMid(i), y2: top + ih }));
+  }
+
+  function hitAreas(svg, g, top, ih, tipFor) {
+    g.months.forEach((m, i) => {
+      svg.appendChild(h('rect', {
+        x: g.xMid(i) - g.step / 2, y: top, width: g.step, height: ih, fill: 'transparent', style: 'cursor:pointer',
+        onpointermove: (e) => showTip(e, tipFor(m)),
+        onpointerleave: hideTip,
+        onclick: () => setPinned(state.pinned === m.month ? null : m.month),
+      }));
+    });
+  }
+
+  // 1) Joined above the axis, left below it, net as a dashed line.
+  function renderFlowChart() {
+    const box = $('#flowChart');
+    const W = 960; const Hgt = 300; const left = 40; const right = 14; const top = 16; const bottom = 24;
+    const g = growthGeom(W, Hgt, left, right, top, bottom);
+    if (!g.months.length) { box.replaceChildren(); return; }
+    const max = Math.max(1, ...g.months.map((m) => Math.max(m.joined, m.left)));
+    const ticks = niceTicks(max);
+    const topVal = ticks[ticks.length - 1];
+    const midY = top + g.ih / 2;
+    const y = (v) => midY - (v / topVal) * (g.ih / 2);
+    const bw = Math.min(g.step - 6, 26);
+    const svg = h('svg', { viewBox: `0 0 ${W} ${Hgt}`, role: 'img', 'aria-label': 'Students who joined and left each month' });
+    pinBand(svg, g, top, g.ih);
+    for (const t of ticks) {
+      if (t === 0) continue;
+      for (const sign of [1, -1]) {
+        svg.appendChild(h('line', { x1: left, y1: y(t * sign), x2: W - right, y2: y(t * sign), stroke: 'var(--grid-line)', 'stroke-width': 1 }));
+      }
+      svg.appendChild(h('text', { x: left - 6, y: y(t) + 3, 'text-anchor': 'end', text: String(t) }));
+      svg.appendChild(h('text', { x: left - 6, y: y(-t) + 3, 'text-anchor': 'end', text: String(t) }));
+    }
+    svg.appendChild(h('line', { class: 'zero-rule', x1: left, y1: midY, x2: W - right, y2: midY }));
+    g.months.forEach((m, i) => {
+      const cx = g.xMid(i);
+      if (m.joined > 0) {
+        const bh = (m.joined / topVal) * (g.ih / 2);
+        svg.appendChild(h('path', { d: barPath(cx - bw / 2, midY - bh, bw, bh, 4, false), fill: 'var(--joined)' }));
+      }
+      if (m.left > 0) {
+        const bh = (m.left / topVal) * (g.ih / 2);
+        // grows downward from the zero line: same path, flipped
+        svg.appendChild(h('path', {
+          d: barPath(cx - bw / 2, midY, bw, bh, 4, false),
+          fill: 'var(--leftc)', transform: `rotate(180 ${cx} ${midY + bh / 2})`,
+        }));
+      }
+    });
+    const netPts = g.months.map((m, i) => `${g.xMid(i)},${y(m.net)}`).join(' ');
+    svg.appendChild(h('polyline', {
+      points: netPts, fill: 'none', stroke: 'var(--text-secondary)', 'stroke-width': 2,
+      'stroke-dasharray': '5 4', 'stroke-linejoin': 'round',
+    }));
+    g.months.forEach((m, i) => svg.appendChild(h('circle', {
+      cx: g.xMid(i), cy: y(m.net), r: 3.5, fill: 'var(--surface)', stroke: 'var(--text-secondary)', 'stroke-width': 2,
+    })));
+    monthTicks(svg, g, left, Hgt);
+    hitAreas(svg, g, top, g.ih, (m) => tipRows(
+      `${m.joined} joined · ${m.left} left`,
+      `${m.label} · net ${m.net >= 0 ? '+' : ''}${m.net} · ${m.active} active at month end`,
+    ));
+    box.replaceChildren(svg);
+
+    $('#flowTable').replaceChildren(h('table', {}, [
+      h('thead', {}, h('tr', {}, ['Month', 'Joined', 'Left', 'Net', 'Active', 'Kept', 'Median stay'].map((t) => h('th', { text: t })))),
+      h('tbody', {}, g.months.slice().reverse().map((m) => h('tr', {}, [
+        h('td', { text: m.label }),
+        h('td', { class: 'num', text: String(m.joined) }),
+        h('td', { class: 'num', text: String(m.left) }),
+        h('td', { class: 'num', text: `${m.net >= 0 ? '+' : ''}${m.net}` }),
+        h('td', { class: 'num', text: String(m.active) }),
+        h('td', { class: 'num', text: m.retention == null ? '—' : m.retention + '%' }),
+        h('td', { class: 'num', text: m.medianStay == null ? '—' : m.medianStay + ' mo' }),
+      ]))),
+    ]));
+  }
+
+  // 2) Roster headcount at each month end.
+  function renderRosterChart() {
+    const box = $('#rosterChart');
+    const W = 460; const Hgt = 200; const left = 38; const right = 12; const top = 14; const bottom = 24;
+    const g = growthGeom(W, Hgt, left, right, top, bottom);
+    if (!g.months.length) { box.replaceChildren(); return; }
+    const vals = g.months.map((m) => m.active);
+    const max = Math.max(1, ...vals);
+    const ticks = niceTicks(max);
+    const topVal = ticks[ticks.length - 1];
+    const y = (v) => top + g.ih - (v / topVal) * g.ih;
+    const svg = h('svg', { viewBox: `0 0 ${W} ${Hgt}`, role: 'img', 'aria-label': 'Active students at the end of each month' });
+    pinBand(svg, g, top, g.ih);
+    for (const t of ticks) {
+      svg.appendChild(h('line', { x1: left, y1: y(t), x2: W - right, y2: y(t), stroke: 'var(--grid-line)', 'stroke-width': 1 }));
+      svg.appendChild(h('text', { x: left - 5, y: y(t) + 3, 'text-anchor': 'end', text: t.toLocaleString() }));
+    }
+    const pts = g.months.map((m, i) => `${g.xMid(i)},${y(m.active)}`).join(' ');
+    svg.appendChild(h('path', {
+      d: `M${g.xMid(0)},${y(0)} L${pts.split(' ').join(' L')} L${g.xMid(g.months.length - 1)},${y(0)} Z`,
+      fill: 'var(--series-1-wash)', stroke: 'none',
+    }));
+    svg.appendChild(h('polyline', { points: pts, fill: 'none', stroke: 'var(--series-1)', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    const last = g.months[g.months.length - 1];
+    svg.appendChild(h('circle', { cx: g.xMid(g.months.length - 1), cy: y(last.active), r: 4.5, fill: 'var(--series-1)', stroke: 'var(--surface)', 'stroke-width': 2 }));
+    svg.appendChild(h('text', { x: g.xMid(g.months.length - 1) - 6, y: Math.max(y(last.active) - 8, 12), 'text-anchor': 'end', class: 'val-label', text: String(last.active) }));
+    monthTicks(svg, g, left, Hgt);
+    hitAreas(svg, g, top, g.ih, (m) => tipRows(`${m.active} active students`, `${m.label} · ${m.joined} joined, ${m.left} left`));
+    box.replaceChildren(svg);
+    const first = g.months[0];
+    const change = last.active - first.active;
+    $('#rosterNote').textContent = `${change >= 0 ? '+' : ''}${change} since ${first.label}`;
+  }
+
+  // 3) Median length of stay of the students who left, with the middle half shaded.
+  function renderStayChart() {
+    const box = $('#stayChart');
+    const W = 460; const Hgt = 200; const left = 38; const right = 12; const top = 14; const bottom = 24;
+    const g = growthGeom(W, Hgt, left, right, top, bottom);
+    const withStay = g.months.filter((m) => m.medianStay != null);
+    if (!withStay.length) {
+      box.replaceChildren(h('p', { class: 'muted empty', text: 'Nobody has left in this window, so there is no length of stay to plot.' }));
+      $('#stayNote').textContent = '';
+      return;
+    }
+    const max = Math.max(1, ...g.months.map((m) => m.p75Stay || m.medianStay || 0));
+    const ticks = niceTicks(max);
+    const topVal = ticks[ticks.length - 1];
+    const y = (v) => top + g.ih - (v / topVal) * g.ih;
+    const svg = h('svg', { viewBox: `0 0 ${W} ${Hgt}`, role: 'img', 'aria-label': 'Median length of stay of students who left each month' });
+    pinBand(svg, g, top, g.ih);
+    for (const t of ticks) {
+      svg.appendChild(h('line', { x1: left, y1: y(t), x2: W - right, y2: y(t), stroke: 'var(--grid-line)', 'stroke-width': 1 }));
+      svg.appendChild(h('text', { x: left - 5, y: y(t) + 3, 'text-anchor': 'end', text: String(t) }));
+    }
+    // the interquartile band, drawn only across runs of consecutive months
+    let run = [];
+    const flush = () => {
+      if (run.length >= 2) {
+        const up = run.map((r) => `${g.xMid(r.i)},${y(r.m.p75Stay)}`);
+        const down = run.slice().reverse().map((r) => `${g.xMid(r.i)},${y(r.m.p25Stay)}`);
+        svg.appendChild(h('path', { d: `M${up.join(' L')} L${down.join(' L')} Z`, fill: 'var(--stay)', opacity: 0.18, stroke: 'none' }));
+      }
+      run = [];
+    };
+    g.months.forEach((m, i) => {
+      if (m.p25Stay != null && m.p75Stay != null) run.push({ i, m }); else flush();
+    });
+    flush();
+    // median line, broken where a month had no leavers
+    let seg = [];
+    const flushLine = () => {
+      if (seg.length >= 2) svg.appendChild(h('polyline', { points: seg.join(' '), fill: 'none', stroke: 'var(--stay)', 'stroke-width': 2.5, 'stroke-linejoin': 'round' }));
+      else if (seg.length === 1) { const [x, yy] = seg[0].split(','); svg.appendChild(h('circle', { cx: x, cy: yy, r: 3, fill: 'var(--stay)' })); }
+      seg = [];
+    };
+    g.months.forEach((m, i) => {
+      if (m.medianStay == null) flushLine(); else seg.push(`${g.xMid(i)},${y(m.medianStay)}`);
+    });
+    flushLine();
+    monthTicks(svg, g, left, Hgt);
+    hitAreas(svg, g, top, g.ih, (m) => (m.medianStay == null
+      ? tipRows('nobody left', m.label)
+      : tipRows(`${m.medianStay} months`, `${m.label} · median of ${m.leaverCount} who left · middle half ${m.p25Stay}–${m.p75Stay} mo`)));
+    box.replaceChildren(svg);
+    const all = withStay.map((m) => m.medianStay);
+    const first3 = all.slice(0, 3).reduce((a, b) => a + b, 0) / Math.min(3, all.length);
+    const last3 = all.slice(-3).reduce((a, b) => a + b, 0) / Math.min(3, all.length);
+    const dir = last3 > first3 + 0.5 ? 'rising' : last3 < first3 - 0.5 ? 'falling' : 'steady';
+    $('#stayNote').textContent = `Students who left recently had stayed a median of ${all[all.length - 1]} months. The trend is ${dir}.`;
+  }
+
+  function renderGrowth() {
+    const c = state.cohorts;
+    const empty = $('#growthEmpty');
+    const grid = document.querySelector('.growth-grid');
+    if (!c || !c.months || !c.months.length) {
+      empty.hidden = false;
+      empty.textContent = c && c.unavailable
+        ? 'Radius did not return the enrollment history this time - it will retry shortly.'
+        : 'Loading the enrollment history…';
+      grid.hidden = true;
+      $('#pinCard').hidden = true;
+      return;
+    }
+    empty.hidden = true;
+    grid.hidden = false;
+    if (state.pinned && !pinnedRow()) state.pinned = null; // scope changed under us
+    $('#growthTitle').textContent = 'Growth & retention';
+    renderFinderChips();
+    renderPinCard();
+    renderFlowChart();
+    renderRosterChart();
+    renderStayChart();
+  }
+
+  $('#monthSearch').addEventListener('input', (e) => {
+    const key = resolveMonthQuery(e.target.value);
+    state.finderText = e.target.value;
+    $('#finderClear').hidden = !e.target.value;
+    setPinned(key, { fromInput: true });
+  });
+  $('#monthSearch').addEventListener('keydown', (e) => {
+    const months = monthsOf();
+    if (!months.length) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      const i = months.findIndex((m) => m.month === state.pinned);
+      if (i < 0) return;
+      const next = months[i + (e.key === 'ArrowRight' ? 1 : -1)];
+      if (next) { e.preventDefault(); setPinned(next.month); }
+    } else if (e.key === 'Escape') {
+      e.target.value = '';
+      setPinned(null);
+    }
+  });
+  $('#finderClear').addEventListener('click', () => {
+    $('#monthSearch').value = '';
+    setPinned(null);
+    $('#monthSearch').focus();
+  });
 
   function renderRoster() {
     const centers = visibleCenters();
@@ -1091,6 +1464,7 @@
     renderHours();
     renderHeatmap();
     renderCoverage();
+    renderGrowth();
     renderRoster();
   }
 
@@ -1247,6 +1621,10 @@
     if (detailLoading) return;
     detailLoading = true;
     clearTimeout(detailTimer);
+    // The enrollment history behind the growth charts takes ~30s to fetch on a
+    // cold cache, so it loads on its own and paints when it arrives rather
+    // than holding up the tiles, queue and map.
+    loadCohorts().then(renderGrowth).catch((e) => { if (e && e.auth) showLock(); });
     Promise.all([loadDetail(), loadStaffHours()])
       .then(() => {
         renderDetail();
